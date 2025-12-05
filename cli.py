@@ -221,19 +221,30 @@ def run_single_encoder_mode(args, config: Dict[str, Any]) -> int:
 
 
 def run_multi_encoder_mode(args, config: Dict[str, Any]) -> int:
-    """多编码器混合调度模式
+    """多编码器并发调度模式
     
-    分层回退策略：解码方式优先，编码器次之
-    第一层：所有硬件编码器的 硬解+硬编 (NVENC → VideoToolbox → QSV)
-    第二层：所有硬件编码器的 软解+硬编 (NVENC → VideoToolbox → QSV)
-    第三层：CPU 软解+软编（如果启用）
+    高级调度策略：
+    1. NVENC 和 QSV 同时并发处理不同文件
+    2. 失败任务智能回退：
+       - 同编码器：硬解+硬编 → 软解+硬编(限帧) → 软解+硬编
+       - 跨编码器：NVENC失败 → 移交QSV，QSV失败 → 移交NVENC
+       - 最终兜底：CPU 软编码
+    
+    例如: NVENC(3) + QSV(2) = 5个并发
+    文件1-3 分配给 NVENC，文件4-5 分配给 QSV
+    如果 NVENC 硬解失败 → 尝试 NVENC 软解 → 失败则移交 QSV → 最后 CPU 兜底
     """
     import shutil
     import threading
+    from src.scheduler.advanced import (
+        AdvancedScheduler, DecodeMode, EncoderType, create_advanced_scheduler
+    )
+    from src.scheduler.pool import TaskResult
     from src.core import (
         get_video_files, resolve_output_paths, get_bitrate, get_resolution, get_codec,
-        build_layered_fallback_commands, execute_ffmpeg, calculate_target_bitrate
+        execute_ffmpeg, calculate_target_bitrate
     )
+    from src.config.defaults import HW_ENCODERS, SW_ENCODERS, AUDIO_BITRATE
     
     input_folder = config["paths"]["input"]
     output_folder = config["paths"]["output"]
@@ -246,19 +257,21 @@ def run_multi_encoder_mode(args, config: Dict[str, Any]) -> int:
     limit_fps_software_decode = config["fps"]["limit_on_software_decode"]
     limit_fps_software_encode = config["fps"]["limit_on_software_encode"]
     max_bitrate_by_resolution = config["encoding"]["bitrate"].get("max_by_resolution")
-    max_concurrent = config["scheduler"]["max_total_concurrent"]
-    cpu_fallback = config["encoders"].get("cpu_fallback", True)
     
-    # 获取启用的编码器列表
-    enabled_encoders = config["encoders"].get("enabled", [])
+    # 创建高级调度器
+    scheduler = create_advanced_scheduler(config)
     
     logging.info("=" * 60)
-    logging.info("SBVC - 超级批量视频压缩器 (分层回退模式)")
+    logging.info("SBVC - 超级批量视频压缩器 (高级调度模式)")
     logging.info("=" * 60)
-    logging.info(f"启用编码器: {', '.join(enabled_encoders)}")
-    logging.info(f"CPU 兜底: {'是' if cpu_fallback else '否'}")
-    logging.info(f"最大并发: {max_concurrent}")
-    logging.info("回退策略: 硬解硬编(所有) → 软解硬编(所有) → 软解软编(CPU)")
+    
+    stats = scheduler.get_stats()
+    logging.info(f"总并发上限: {stats['max_total_concurrent']}")
+    logging.info(f"启用编码器: {stats['enabled_encoders']}")
+    logging.info(f"CPU 兜底: {'是' if stats['cpu_fallback'] else '否'}")
+    for enc_name, enc_stats in stats['encoder_slots'].items():
+        logging.info(f"  - {enc_name}: 最大并发 {enc_stats['max']}")
+    logging.info("回退策略: 硬解硬编 → 软解硬编 → 其他编码器 → CPU")
     logging.info("-" * 60)
     
     if args.dry_run:
@@ -285,42 +298,125 @@ def run_multi_encoder_mode(args, config: Dict[str, Any]) -> int:
     completed = 0
     lock = threading.Lock()
     
-    # 预检查输出是否已存在，先行跳过
+    # 预检查输出是否已存在
     for filepath in video_files:
         output_path, _ = resolve_output_paths(
             filepath, input_folder, output_folder, keep_structure
         )
         if os.path.exists(output_path):
             logging.info(f"[跳过] 输出文件已存在(预检查): {output_path}")
-            results.append((filepath, {"status": RESULT_SKIP_EXISTS, "success": True}))
+            results.append((filepath, TaskResult(success=True, stats={"status": RESULT_SKIP_EXISTS})))
             completed += 1
             continue
         files_to_process.append(filepath)
     
-    def compress_with_layered_fallback(filepath: str) -> Dict[str, Any]:
-        """使用分层回退策略压缩视频"""
-        nonlocal completed
+    def build_encode_command(
+        filepath: str,
+        temp_filename: str,
+        bitrate: int,
+        source_codec: str,
+        encoder_type: EncoderType,
+        decode_mode: DecodeMode
+    ) -> Dict[str, Any]:
+        """根据编码器类型和解码模式构建命令"""
+        supported_hw_decode_codecs = ["h264", "hevc", "av1", "vp9", "mpeg2video"]
         
+        hw_accel_map = {
+            EncoderType.NVENC: "nvenc",
+            EncoderType.QSV: "qsv",
+            EncoderType.VIDEOTOOLBOX: "videotoolbox",
+            EncoderType.CPU: "none",
+        }
+        hw_accel = hw_accel_map.get(encoder_type, "none")
+        
+        hw_names = {
+            "nvenc": "NVIDIA NVENC",
+            "qsv": "Intel QSV",
+            "videotoolbox": "Apple VideoToolbox",
+            "none": "CPU",
+        }
+        hw_display = hw_names.get(hw_accel, hw_accel)
+        
+        codec_names = {"hevc": "HEVC", "avc": "H.264", "av1": "AV1"}
+        codec_display = codec_names.get(output_codec, output_codec.upper())
+        
+        # CPU 软编码
+        if encoder_type == EncoderType.CPU:
+            sw_encoder = SW_ENCODERS.get(output_codec, "libx264")
+            encoder_params = ['-preset', 'medium'] if sw_encoder in ("libx265", "libx264") else []
+            if sw_encoder == "libsvtav1":
+                encoder_params = ['-preset', '6']
+            
+            cmd = ['ffmpeg', '-y', '-hide_banner', '-i', filepath]
+            
+            if decode_mode == DecodeMode.SW_DECODE_LIMITED and limit_fps_software_encode:
+                cmd.extend(['-vf', f'fps={max_fps}'])
+                name = f"{hw_display} ({sw_encoder}, 限{max_fps}fps)"
+            else:
+                name = f"{hw_display} ({sw_encoder})"
+            
+            cmd.extend(['-c:v', sw_encoder])
+            cmd.extend(encoder_params)
+            cmd.extend(['-b:v', str(bitrate), '-c:a', 'aac', '-b:a', AUDIO_BITRATE, temp_filename])
+            
+            return {"name": name, "cmd": cmd}
+        
+        # 硬件编码
+        hw_config = HW_ENCODERS.get(hw_accel, {})
+        hw_encoder = hw_config.get(output_codec)
+        hwaccel = hw_config.get("hwaccel")
+        hwaccel_output_format = hw_config.get("hwaccel_output_format")
+        
+        if not hw_encoder:
+            # 回退到 CPU
+            return build_encode_command(
+                filepath, temp_filename, bitrate, source_codec,
+                EncoderType.CPU, DecodeMode.SW_DECODE
+            )
+        
+        # 硬解+硬编
+        if decode_mode == DecodeMode.HW_DECODE and source_codec in supported_hw_decode_codecs and hwaccel:
+            cmd = ['ffmpeg', '-y', '-hide_banner']
+            cmd.extend(['-hwaccel', hwaccel])
+            if hwaccel_output_format:
+                cmd.extend(['-hwaccel_output_format', hwaccel_output_format])
+            cmd.extend(['-i', filepath])
+            cmd.extend(['-c:v', hw_encoder, '-b:v', str(bitrate)])
+            cmd.extend(['-c:a', 'aac', '-b:a', AUDIO_BITRATE, temp_filename])
+            return {"name": f"{hw_display} ({codec_display}, 硬解+硬编)", "cmd": cmd}
+        
+        # 软解+硬编
+        cmd = ['ffmpeg', '-y', '-hide_banner', '-i', filepath]
+        
+        if decode_mode == DecodeMode.SW_DECODE_LIMITED and limit_fps_software_decode:
+            cmd.extend(['-vf', f'fps={max_fps}'])
+            name = f"{hw_display} ({codec_display}, 软解+硬编, 限{max_fps}fps)"
+        else:
+            name = f"{hw_display} ({codec_display}, 软解+硬编)"
+        
+        cmd.extend(['-c:v', hw_encoder, '-b:v', str(bitrate)])
+        cmd.extend(['-c:a', 'aac', '-b:a', AUDIO_BITRATE, temp_filename])
+        
+        return {"name": name, "cmd": cmd}
+    
+    def encode_file(filepath: str, encoder_type: EncoderType, decode_mode: DecodeMode) -> TaskResult:
+        """编码单个文件"""
         stats = {"original_size": 0, "new_size": 0, "original_bitrate": 0, "new_bitrate": 0}
         
         try:
-            # 检查文件大小
             file_size = os.path.getsize(filepath)
             stats["original_size"] = file_size
             
             if file_size < min_file_size * 1024 * 1024:
                 logging.info(f"[跳过] 文件小于 {min_file_size}MB: {filepath}")
                 stats["status"] = RESULT_SKIP_SIZE
-                stats["success"] = True
-                return stats
+                return TaskResult(success=True, filepath=filepath, stats=stats)
             
-            # 获取视频信息
             original_bitrate = get_bitrate(filepath)
             width, height = get_resolution(filepath)
             source_codec = get_codec(filepath)
             stats["original_bitrate"] = original_bitrate
             
-            # 计算目标码率
             new_bitrate = calculate_target_bitrate(
                 original_bitrate, width, height,
                 force_bitrate, forced_bitrate,
@@ -328,139 +424,100 @@ def run_multi_encoder_mode(args, config: Dict[str, Any]) -> int:
             )
             stats["new_bitrate"] = new_bitrate
             
-            # 确定输出文件路径
             new_filename, temp_filename = resolve_output_paths(
                 filepath, input_folder, output_folder, keep_structure
             )
             os.makedirs(os.path.dirname(new_filename), exist_ok=True)
             
-            # 再次检查输出文件是否已存在（防止并发竞争）
             if os.path.exists(new_filename):
                 logging.info(f"[跳过] 输出文件已存在: {new_filename}")
                 stats["status"] = RESULT_SKIP_EXISTS
-                stats["success"] = True
-                return stats
+                return TaskResult(success=True, filepath=filepath, stats=stats)
             
-            # 构建分层回退命令列表
-            encoding_commands = build_layered_fallback_commands(
+            # 构建编码命令
+            cmd_info = build_encode_command(
                 filepath, temp_filename, new_bitrate, source_codec,
-                enabled_encoders, output_codec,
-                limit_fps_software_decode, limit_fps_software_encode, max_fps,
-                cpu_fallback
+                encoder_type, decode_mode
             )
             
-            if not encoding_commands:
-                logging.error(f"[错误] 没有可用的编码命令: {filepath}")
-                stats["status"] = RESULT_ERROR
-                stats["success"] = False
-                stats["error"] = "没有可用的编码命令"
-                return stats
+            logging.info(f"[编码] {encoder_type.value}/{decode_mode.value}: {os.path.basename(filepath)} -> {cmd_info['name']}")
             
-            # 逐一尝试命令（按分层顺序）
-            success = False
-            last_error = None
-            used_method = None
-            fallback_chain = []
-            
-            for i, cmd_info in enumerate(encoding_commands):
-                encoder = cmd_info.get("encoder", "unknown")
-                layer = cmd_info.get("layer", "unknown")
-                fallback_chain.append(f"{encoder}:{layer}")
-                
-                logging.info(f"[编码] 方法 {i+1}/{len(encoding_commands)}: {os.path.basename(filepath)} -> {cmd_info['name']}")
-                
-                success, error = execute_ffmpeg(cmd_info["cmd"])
-                
-                if success:
-                    used_method = cmd_info['name']
-                    stats["encoder"] = encoder
-                    stats["layer"] = layer
-                    break
-                else:
-                    last_error = error
-                    logging.warning(f"[重试] {cmd_info['name']} 失败: {error}")
-                    # 清理可能生成的临时文件
-                    if os.path.exists(temp_filename):
-                        try:
-                            os.remove(temp_filename)
-                        except:
-                            pass
-            
-            stats["fallback_chain"] = fallback_chain
+            # 执行编码
+            success, error = execute_ffmpeg(cmd_info["cmd"])
             
             if not success:
-                logging.error(f"[失败] 所有编码方法均失败: {os.path.basename(filepath)}")
-                stats["status"] = RESULT_ERROR
-                stats["success"] = False
-                stats["error"] = last_error
-                return stats
+                if os.path.exists(temp_filename):
+                    try:
+                        os.remove(temp_filename)
+                    except:
+                        pass
+                return TaskResult(success=False, filepath=filepath, error=error, stats=stats)
             
-            # 移动临时文件到目标位置
+            # 移动文件
             try:
                 shutil.move(temp_filename, new_filename)
             except Exception as e:
-                logging.error(f"文件移动失败: {e}")
-                stats["status"] = RESULT_ERROR
-                stats["success"] = False
-                stats["error"] = str(e)
-                return stats
+                return TaskResult(success=False, filepath=filepath, error=str(e), stats=stats)
             
-            # 获取新文件大小
             new_size = os.path.getsize(new_filename)
             stats["new_size"] = new_size
             stats["status"] = RESULT_SUCCESS
-            stats["success"] = True
-            stats["method"] = used_method
+            stats["method"] = cmd_info['name']
             
             compression_ratio = (1 - new_size / file_size) * 100 if file_size > 0 else 0
             logging.info(
-                f"[完成] {os.path.basename(filepath)} | {used_method} | "
-                f"码率: {original_bitrate/1000:.0f}k -> {new_bitrate/1000:.0f}k | "
-                f"大小: {file_size/1024/1024:.1f}MB -> {new_size/1024/1024:.1f}MB | "
-                f"压缩率: {compression_ratio:.1f}%"
+                f"[完成] {encoder_type.value}: {os.path.basename(filepath)} | "
+                f"{cmd_info['name']} | 压缩率: {compression_ratio:.1f}%"
             )
             
-            return stats
+            return TaskResult(success=True, filepath=filepath, stats=stats)
             
         except Exception as e:
             logging.error(f"[异常] 处理 {filepath} 时发生错误: {e}")
-            stats["status"] = RESULT_ERROR
-            stats["success"] = False
-            stats["error"] = str(e)
-            return stats
+            return TaskResult(success=False, filepath=filepath, error=str(e), stats=stats)
     
     def process_file(filepath: str):
         nonlocal completed
-        result = compress_with_layered_fallback(filepath)
+        
+        result = scheduler.schedule_task(filepath, encode_file)
+        
         with lock:
             completed += 1
-            logging.info(f"[进度] {completed}/{total_files} ({completed/total_files*100:.1f}%)")
+            retry_info = ""
+            if result.retry_history:
+                retry_info = f" [尝试: {' → '.join(result.retry_history)}]"
+            logging.info(f"[进度] {completed}/{total_files} ({completed/total_files*100:.1f}%){retry_info}")
+        
         return (filepath, result)
     
     # 使用线程池并发处理
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-        futures = [executor.submit(process_file, f) for f in files_to_process]
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                results.append(future.result())
-            except Exception as e:
-                logging.error(f"任务异常: {e}")
+    max_workers = scheduler.max_total_concurrent
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(process_file, f) for f in files_to_process]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as e:
+                    logging.error(f"任务异常: {e}")
+    finally:
+        scheduler.shutdown()
     
     # 统计结果
-    skip_exists_count = sum(1 for _, r in results if r.get("status") == RESULT_SKIP_EXISTS)
-    skip_size_count = sum(1 for _, r in results if r.get("status") == RESULT_SKIP_SIZE)
+    skip_exists_count = sum(1 for _, r in results if r.stats.get("status") == RESULT_SKIP_EXISTS)
+    skip_size_count = sum(1 for _, r in results if r.stats.get("status") == RESULT_SKIP_SIZE)
     success_count = sum(
         1 for _, r in results
-        if r.get("success") and r.get("status") not in (RESULT_SKIP_SIZE, RESULT_SKIP_EXISTS)
+        if r.success and r.stats.get("status") not in (RESULT_SKIP_SIZE, RESULT_SKIP_EXISTS)
     )
     fail_count = len(results) - success_count - skip_exists_count - skip_size_count
     
-    # 统计各编码器使用情况
+    # 统计编码器使用情况
     encoder_usage = {}
     for _, r in results:
-        encoder = r.get("encoder")
-        if encoder:
-            encoder_usage[encoder] = encoder_usage.get(encoder, 0) + 1
+        if r.encoder_used:
+            enc = r.encoder_used.value
+            encoder_usage[enc] = encoder_usage.get(enc, 0) + 1
     
     logging.info("=" * 60)
     logging.info("任务完成统计")
@@ -471,6 +528,12 @@ def run_multi_encoder_mode(args, config: Dict[str, Any]) -> int:
     )
     if encoder_usage:
         logging.info(f"编码器使用统计: {encoder_usage}")
+    
+    # 显示调度器最终统计
+    final_stats = scheduler.get_stats()
+    logging.info("编码器详细统计:")
+    for enc_name, enc_stats in final_stats['encoder_slots'].items():
+        logging.info(f"  - {enc_name}: 完成 {enc_stats['completed']}, 失败 {enc_stats['failed']}")
     logging.info("=" * 60)
     
     return 0 if fail_count == 0 else 1

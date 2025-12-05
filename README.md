@@ -1,18 +1,28 @@
 # Super Batch Video Compressor (SBVC)
 
-SBVC 是一个基于 FFmpeg 的批量视频压缩命令行工具，支持 NVENC / Apple VideoToolbox / Intel QSV 等硬件加速，并内置**分层回退策略**与进程管理，适合大批量转码场景。
+SBVC 是一个基于 FFmpeg 的批量视频压缩命令行工具，支持 NVENC / Intel QSV 等硬件加速，并内置**高级多编码器调度**与进程管理，适合大批量转码场景。
 
 ## 主要特性
-- 自动按分辨率计算目标码率（默认原码率的 50%，最小 500 kbps，带强制码率选项）
-- **分层回退策略**：解码方式优先，编码器次之
-  - 第1层：所有硬件编码器的硬解+硬编（NVENC → VideoToolbox → QSV）
-  - 第2层：所有硬件编码器的软解+硬编（可限帧）
-  - 第3层：CPU 软解+软编（兜底）
-- **进程管理**：Ctrl+C 时自动终止所有 FFmpeg 子进程，启动时自动清理残留临时文件
-- 可保持输入目录结构输出到指定文件夹，所有输出统一转为 `.mp4`
-- 多编码器并发处理，编码器优先级可配置：`nvenc > videotoolbox > qsv > cpu`
-- 自动检测硬件加速（`--hw-accel auto`），可通过配置文件或命令行覆盖
-- 日志同时写入文件与控制台，默认保存在指定日志目录
+- **多编码器并发**：NVENC 和 QSV 同时处理不同文件，充分利用 N 卡和集成显卡
+- **智能回退调度**：
+  - 同编码器内：硬解+硬编 → 软解+硬编(限帧) → 软解+硬编
+  - 跨编码器：NVENC失败 → 移交QSV → QSV失败 → 移交NVENC
+  - 最终兜底：CPU 软编码
+- **进程管理**：Ctrl+C 时自动终止所有 FFmpeg 子进程，启动时自动清理临时文件
+- 自动按分辨率计算目标码率（默认原码率的 50%，最小 500 kbps）
+- 可保持输入目录结构输出，所有输出统一转为 `.mp4`
+- 日志同时写入文件与控制台
+
+## 硬件编码器说明
+
+| 编码器 | 平台 | 硬件 | 说明 |
+|--------|------|------|------|
+| NVENC | Windows/Linux | NVIDIA GPU | N 卡硬件编码，速度最快 |
+| QSV | Windows/Linux | Intel CPU 集显 | Intel Quick Sync Video |
+| VideoToolbox | macOS | Apple 芯片/集显 | Apple 专用，Windows 不可用 |
+| CPU | 全平台 | CPU | 软件编码，兼容性最好但最慢 |
+
+> **注意**：VideoToolbox 仅适用于 macOS，在 Windows 系统上应使用 NVENC 和/或 QSV。
 
 ## 环境要求
 - Python 3.8+（建议虚拟环境）
@@ -30,34 +40,70 @@ pip install -r requirements.txt
   ```bash
   python main.py -i ./input -o ./output --hw-accel auto --codec hevc
   ```
-  将自动检测硬件，按默认比例压缩，大于 100MB 的视频会输出到 `./output`，并保持目录结构。
 
-- 多编码器分层回退模式：  
+- 多编码器并发模式（推荐）：  
   ```bash
   cp config-example.yaml config.yaml   # 按需修改编码器配置
   python main.py --multi-gpu --config ./config.yaml
   ```
-  使用分层回退策略：先尝试所有硬件的硬解+硬编，失败后尝试软解+硬编，最后回退到 CPU。
-  可加 `--dry-run` 仅查看任务计划。
 
-## 分层回退策略
-使用 `--multi-gpu` 模式时，采用"解码方式优先，编码器次之"的回退策略：
+## 高级调度策略
+
+使用 `--multi-gpu` 模式时，采用**多编码器并发 + 智能回退**策略：
 
 ```
-第1层: 硬解+硬编（所有启用的硬件编码器）
-  NVENC硬解+硬编 → VideoToolbox硬解+硬编 → QSV硬解+硬编
-  
-第2层: 软解+硬编 限帧率（所有启用的硬件编码器）
-  NVENC软解+硬编(限30fps) → VideoToolbox软解+硬编(限30fps) → QSV软解+硬编(限30fps)
-
-第3层: 软解+硬编 不限帧率（所有启用的硬件编码器）
-  NVENC软解+硬编 → VideoToolbox软解+硬编 → QSV软解+硬编
-
-第4层: CPU 软解+软编（如果启用 cpu_fallback）
-  CPU软编(限30fps) → CPU软编
+                     ┌─────────────────────────────────────┐
+                     │           新任务入口                 │
+                     └─────────────────────────────────────┘
+                                      ↓
+          ┌───────────────────────────┴───────────────────────────┐
+          ↓                                                       ↓
+┌─────────────────────┐                               ┌─────────────────────┐
+│   NVENC (3个槽位)   │                               │   QSV (2个槽位)     │
+│   处理文件 1,2,3    │                               │   处理文件 4,5      │
+└─────────────────────┘                               └─────────────────────┘
+          ↓ 失败                                                  ↓ 失败
+┌─────────────────────┐                               ┌─────────────────────┐
+│ 软解+硬编(限帧)     │                               │ 软解+硬编(限帧)     │
+│ 软解+硬编           │                               │ 软解+硬编           │
+└─────────────────────┘                               └─────────────────────┘
+          ↓ 仍然失败                                              ↓ 仍然失败
+          └───────────────────────┬───────────────────────────────┘
+                                  ↓
+                     ┌─────────────────────────────────────┐
+                     │      移交其他编码器重试              │
+                     │   NVENC失败 → QSV                   │
+                     │   QSV失败 → NVENC                   │
+                     └─────────────────────────────────────┘
+                                  ↓ 所有硬件都失败
+                     ┌─────────────────────────────────────┐
+                     │      CPU 软编码兜底                  │
+                     └─────────────────────────────────────┘
 ```
 
-编码器优先级: `nvenc > videotoolbox > qsv > cpu`
+### 配置示例
+```yaml
+# config.yaml
+encoders:
+  enabled: [nvenc, qsv]    # Windows: N卡 + Intel集显
+  cpu_fallback: true       # 启用 CPU 兜底
+  nvenc:
+    max_concurrent: 3      # NVENC 同时处理 3 个文件
+  qsv:
+    max_concurrent: 2      # QSV 同时处理 2 个文件
+scheduler:
+  max_total_concurrent: 5  # 总并发 = 3 + 2
+```
+
+### 日志输出示例
+```
+[编码] nvenc/hw_decode: file1.mp4 -> NVIDIA NVENC (HEVC, 硬解+硬编)
+[编码] nvenc/hw_decode: file2.mp4 -> NVIDIA NVENC (HEVC, 硬解+硬编)
+[编码] qsv/hw_decode: file4.mp4 -> Intel QSV (HEVC, 硬解+硬编)
+[完成] nvenc: file1.mp4 | NVIDIA NVENC (HEVC, 硬解+硬编) | 压缩率: 65%
+[编码] nvenc/sw_decode: file3.mp4 -> NVIDIA NVENC (HEVC, 软解+硬编)  # 硬解失败，降级
+[进度] 4/10 (40%) [尝试: nvenc:hw_decode → qsv:hw_decode]  # 跨编码器回退
+```
 
 ## 进程管理
 - **Ctrl+C 优雅退出**：按下 Ctrl+C 时，程序会自动终止所有正在运行的 FFmpeg 子进程，然后退出
