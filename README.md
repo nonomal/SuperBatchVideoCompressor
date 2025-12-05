@@ -1,257 +1,66 @@
-# SBVC - Super Batch Video Compressor
+# Super Batch Video Compressor (SBVC)
 
-**超级批量视频压缩器** - 一款功能强大的批量视频压缩工具，支持多平台硬件加速和智能编码策略。
+SBVC 是一个基于 FFmpeg 的批量视频压缩命令行工具，支持 NVENC / Apple VideoToolbox / Intel QSV 等硬件加速，并内置多编码器混合调度与 CPU 兜底回退，适合大批量转码场景。
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+## 主要特性
+- 自动按分辨率计算目标码率（默认原码率的 50%，最小 500 kbps，带强制码率选项）
+- 支持硬件解码+编码、软件解码+硬件编码、纯软件编码多级回退，自动跳过过小文件和已存在的输出
+- 可保持输入目录结构输出到指定文件夹，所有输出统一转为 `.mp4`
+- 多编码器混合调度：NVENC / QSV / VideoToolbox / CPU 并发上限可配，支持优先级、最少负载、轮询三种策略
+- 自动检测硬件加速（`--hw-accel auto`），可通过配置文件或命令行覆盖
+- 日志同时写入文件与控制台，默认保存在指定日志目录
 
-## ✨ 功能特性
+## 环境要求
+- Python 3.8+（建议虚拟环境）
+- 已安装并可通过 `ffmpeg` / `ffprobe` 调用的 FFmpeg
+- 如需读取 YAML 配置需安装 `pyyaml`（在 `requirements.txt` 中）
+- 对应的硬件驱动：NVIDIA (NVENC)、Intel (QSV)、Apple (VideoToolbox)
 
-- 🚀 **多平台硬件加速**
-  - NVIDIA GPU (CUDA + NVENC)
-  - Apple VideoToolbox (Mac)
-  - Intel Quick Sync Video (QSV)
-
-- 🎬 **多格式输出**
-  - HEVC/H.265 (推荐，压缩率高)
-  - AVC/H.264 (兼容性最好)
-  - AV1 (最新，压缩率最高)
-
-- 🔧 **智能编码策略**
-  - 自动检测硬件加速能力
-  - 智能降级机制 (GPU → CPU 自动回退)
-  - 基于分辨率的智能码率计算
-  - 可配置的帧率限制
-
-- 📁 **批量处理能力**
-  - 支持 18 种视频格式
-  - 多线程并发处理
-  - 保持原始目录结构
-  - 详细的日志记录与进度显示
-
-## 📋 支持的视频格式
-
-| 格式 | 扩展名 |
-|------|--------|
-| 常见格式 | `.mp4`, `.mkv`, `.avi`, `.mov`, `.wmv` |
-| 流媒体 | `.ts`, `.m2ts`, `.mpeg`, `.mpg`, `.flv` |
-| 其他格式 | `.rm`, `.rmvb`, `.3gp`, `.webm`, `.m4v`, `.vob`, `.ogv`, `.f4v` |
-
-## 🛠️ 安装要求
-
-### 必需依赖
-
-- **Python 3.6+**
-- **FFmpeg** (包含 ffprobe)
-
-### FFmpeg 安装
-
+## 安装
 ```bash
-# macOS
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt install ffmpeg
-
-# Windows (使用 Chocolatey)
-choco install ffmpeg
-
-# Windows (使用 Scoop)
-scoop install ffmpeg
+pip install -r requirements.txt
 ```
 
-### 硬件加速支持
+## 快速开始
+- 单编码器模式（默认）：  
+  ```bash
+  python main.py -i ./input -o ./output --hw-accel auto --codec hevc
+  ```
+  将自动检测硬件，按默认比例压缩，大于 100MB 的视频会输出到 `./output`，并保持目录结构。
 
-| 平台 | 加速器 | 要求 |
-|------|--------|------|
-| Windows/Linux | NVENC | NVIDIA GPU + 驱动 |
-| macOS | VideoToolbox | 内置支持 |
-| Windows/Linux | QSV | Intel 集成显卡 |
+- 多 GPU/多编码器混合调度：  
+  ```bash
+  cp config-example.yaml config.yaml   # 按需修改编码器并发/回退链
+  python main.py --multi-gpu --config ./config.yaml
+  ```
+  使用配置中的并发上限与调度策略（默认优先级），可加 `--dry-run` 仅查看任务计划。
 
-## 🚀 快速开始
+## 主要命令行参数
+- 路径：`-i/--input` 输入目录，`-o/--output` 输出目录，`-l/--log` 日志目录（默认值见 `src/config/defaults.py`）
+- 编码：`--hw-accel` auto/nvenc/videotoolbox/qsv/none，`-c/--codec` hevc|avc|av1（默认 hevc）
+- 码率：`--force-bitrate <bps>` 强制码率；否则自动按比例计算  
+  文件过滤：`--min-size <MB>` 最小处理文件大小（默认 100MB），`--no-keep-structure` 取消保持目录结构
+- 并发：`-w/--workers` 单编码器模式线程数（默认 3）；`--enable-software-fallback`/`--cpu-fallback` 启用 CPU 兜底
+- 帧率限制：`--max-fps`（默认 30），`--no-fps-limit` / `--no-fps-limit-decode` / `--no-fps-limit-encode`
+- 混合调度：`--multi-gpu` 启用；`--encoders nvenc,qsv` 指定启用列表；  
+  `--nvenc-concurrent` / `--qsv-concurrent` / `--cpu-concurrent` 单编码器并发，`--max-concurrent` 总并发上限，`--scheduler` 选择 priority|least_loaded|round_robin，`--dry-run` 仅生成计划
 
-### 基本用法
+## 配置文件
+- 默认从 `config.yaml`（项目根目录）或 `~/.sbvc/config.yaml` 读取，命令行参数优先级最高。
+- 示例见 `config-example.yaml`，包含：
+  - `paths`：输入/输出/日志目录
+  - `encoding`：输出编码、音频码率、码率计算方式
+  - `fps`：软件解码/编码时是否限帧
+  - `encoders`：启用的编码器、并发上限、回退链（默认 NVENC → QSV → CPU）
+  - `scheduler`：调度策略与总并发上限
+  - `files`：最小文件大小、是否保持目录结构、是否跳过已存在输出
 
+## 输出与日志
+- 输出文件扩展名统一为 `.mp4`，默认保持输入目录结构；若目标文件已存在会跳过处理。
+- 日志写入 `log` 目录（文件名包含时间戳），同时输出到控制台。
+
+## 测试
 ```bash
-# 基本压缩
-python SBVC.py -i /path/to/input -o /path/to/output
-
-# 查看帮助
-python SBVC.py --help
+pytest
 ```
-
-### 使用示例
-
-```bash
-# 使用 Mac VideoToolbox 硬件加速
-python SBVC.py -i ./input -o ./output --hw-accel videotoolbox
-
-# 使用 NVIDIA 硬件加速
-python SBVC.py -i ./input -o ./output --hw-accel nvenc
-
-# 使用 Intel QSV 硬件加速
-python SBVC.py -i ./input -o ./output --hw-accel qsv
-
-# 输出 H.264/AVC 编码（兼容性最好）
-python SBVC.py -i ./input -o ./output --codec avc
-
-# 输出 AV1 编码（压缩率最高）
-python SBVC.py -i ./input -o ./output --codec av1
-
-# 启用 CPU 编码回退
-python SBVC.py -i ./input -o ./output --cpu-fallback
-
-# 自定义帧率限制
-python SBVC.py -i ./input -o ./output --max-fps 24
-
-# 设置并发线程数
-python SBVC.py -i ./input -o ./output -w 4
-```
-
-## 📖 命令行参数
-
-### 基本参数
-
-| 参数 | 简写 | 说明 | 默认值 |
-|------|------|------|--------|
-| `--input` | `-i` | 输入文件夹路径 | `F:\lada\output` |
-| `--output` | `-o` | 输出文件夹路径 | `F:\lada\pre` |
-| `--log` | `-l` | 日志文件夹路径 | `I:\BVC` |
-
-### 编码格式选项
-
-| 参数 | 说明 | 可选值 | 默认值 |
-|------|------|--------|--------|
-| `--hw-accel` | 硬件加速类型 | `auto`, `nvenc`, `videotoolbox`, `qsv`, `none` | `auto` |
-| `--codec` | 输出视频编码格式 | `hevc`, `avc`, `av1` | `hevc` |
-
-### 处理选项
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--min-size` | 最小文件大小阈值 (MB) | `100` |
-| `--force-bitrate` | 强制码率 (bps)，0 表示自动 | `0` |
-| `--no-keep-structure` | 不保持原始目录结构 | - |
-| `--workers` / `-w` | 并发处理线程数 | `3` |
-
-### 编码回退选项
-
-| 参数 | 说明 |
-|------|------|
-| `--enable-software-fallback` | 启用软件编码回退 |
-| `--cpu-fallback` | 启用 CPU 编码回退 (同上) |
-
-### 帧率限制选项
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--max-fps` | 最大帧率限制 | `30` |
-| `--no-fps-limit` | 禁用所有帧率限制 | - |
-| `--no-fps-limit-decode` | 软件解码时不限制帧率 | - |
-| `--no-fps-limit-encode` | 软件编码时不限制帧率 | - |
-
-## 🔄 编码策略
-
-SBVC 采用智能的多级编码策略，自动选择最优方案：
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      编码优先级                              │
-├─────────────────────────────────────────────────────────────┤
-│  1. 硬件全加速模式  │ 硬件解码 + 硬件编码     │ 最快速度    │
-├─────────────────────────────────────────────────────────────┤
-│  2. 混合模式        │ 软件解码 + 硬件编码     │ 高速度      │
-├─────────────────────────────────────────────────────────────┤
-│  3. 纯软件模式      │ 软件解码 + 软件编码     │ 最大兼容    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-> **注意**: 纯软件模式默认禁用，需通过 `--cpu-fallback` 启用
-
-## 📊 智能码率计算
-
-根据视频分辨率自动确定目标码率上限：
-
-| 分辨率 | 最大码率 |
-|--------|----------|
-| ≤720p | 1.5 Mbps |
-| ≤1080p | 3 Mbps |
-| ≤1440p | 5 Mbps |
-| >1440p | 9 Mbps |
-
-实际码率 = min(原始码率 × 0.5, 最大码率)
-
-## 📝 日志输出
-
-程序运行时会生成详细的日志文件，包含：
-
-- 处理进度和状态
-- 各文件的压缩详情（原始/目标码率、文件大小、压缩率）
-- 使用的编码方法
-- 错误和警告信息
-- 最终统计摘要
-
-日志文件命名格式：`transcoding_YYYYMMDDHHMMSS.log`
-
-## 🏷️ 输出示例
-
-```
-============================================================
-SBVC - 超级批量视频压缩器
-============================================================
-输入目录: /Users/videos/input
-输出目录: /Users/videos/output
-硬件加速: Apple VideoToolbox
-输出编码: HEVC/H.265
-------------------------------------------------------------
-[尝试] 方法 1/3 (Apple VideoToolbox 全加速): video1.mp4
-[成功] 使用 Apple VideoToolbox 全加速 (HEVC/H.265) 完成压缩
-[完成] video1.mp4 | 码率: 8000k -> 3000k | 大小: 500.0MB -> 187.5MB | 压缩率: 62.5%
-[进度] 1/10 (10.0%)
-------------------------------------------------------------
-============================================================
-任务完成统计
-============================================================
-总文件数: 10
-成功压缩: 8
-跳过(文件过小): 1
-跳过(已存在): 1
-失败: 0
-------------------------------------------------------------
-原始总大小: 4.00 GB
-压缩后大小: 1.50 GB
-节省空间: 2.50 GB (62.5%)
-============================================================
-```
-
-## ⚙️ 内置配置
-
-可直接在脚本中修改默认配置：
-
-```python
-# 路径配置
-DEFAULT_INPUT_FOLDER = r"F:\lada\output"
-DEFAULT_OUTPUT_FOLDER = r"F:\lada\pre"
-DEFAULT_LOG_FOLDER = r"I:\BVC"
-
-# 码率设置
-MIN_BITRATE = 500000      # 最小码率 500kbps
-BITRATE_RATIO = 0.5       # 压缩比例
-
-# 音频质量
-AUDIO_BITRATE = "128k"
-
-# 并发设置
-MAX_WORKERS = 3
-```
-
-## 📄 许可证
-
-本项目采用 [GNU General Public License v3.0](LICENSE) 许可证。
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 📮 联系方式
-
-如有问题或建议，请在 [GitHub Issues](https://github.com/BlueSkyXN/SuperBatchVideoCompressor/issues) 中提出。
+当前包含编码器映射与码率计算的基础单元测试。

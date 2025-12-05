@@ -1,0 +1,154 @@
+# SBVC (Super Batch Video Compressor) 配置文件示例
+# 复制此文件为 config.yaml 并根据需要修改
+# 优先级：命令行参数 > 配置文件 > 程序默认值
+# 说明：大部分选项在代码里有对应兜底值（见 src/config/defaults.py），
+#      未设置时会自动使用这些默认值。
+
+# ============================================================
+# 路径配置
+# ============================================================
+paths:
+  # Linux/macOS 路径示例：
+  input: "/path/to/input"   # 输入目录
+  output: "/path/to/output" # 输出目录
+  log: "/path/to/logs"      # 日志目录（程序会创建）
+
+  # Windows 路径示例（取消注释并修改）：
+  # input: "F:/lada/output"    # 推荐使用正斜杠
+  # output: "F:/lada/pre"      # 或使用双反斜杠 "F:\\lada\\pre"
+  # log: "I:/BVC"              # 或使用原始字符串（Python）
+
+# ============================================================
+# 编码配置
+# ============================================================
+encoding:
+  # 输出编码格式: hevc, avc, av1
+  codec: hevc
+  
+  # 音频码率（保持 128k 兼容性较好）
+  audio_bitrate: "128k"
+  
+  # 码率计算
+  bitrate:
+    # 强制码率 (0 = 自动计算；>0 时直接用此值)
+    forced: 0
+    # 压缩比例（自动模式下：目标码率 = 原始码率 * ratio）
+    ratio: 0.5
+    # 最小码率 (bps) —— 防止过度压缩
+    min: 500000
+    # 分辨率封顶逻辑在代码中：短边<=720/1080/1440/其他 -> 1.5/3/5/9 Mbps
+
+# ============================================================
+# 帧率限制
+# ============================================================
+fps:
+  max: 30                            # 软件限帧的上限
+  limit_on_software_decode: true     # 软件解码时限帧
+  limit_on_software_encode: true     # 软件编码时限帧
+
+# ============================================================
+# 编码器配置 (混合调度核心)
+# ============================================================
+encoders:
+  # 启用的编码器列表 (按优先级排序)
+  # 📝 不同平台推荐配置：
+  #   Windows (NVIDIA): ["nvenc"]
+  #   Windows (Intel):  ["qsv"]
+  #   macOS:           ["videotoolbox"]
+  #   Linux (NVIDIA):  ["nvenc"]
+  #   混合:            ["nvenc", "qsv"] 或 ["nvenc", "videotoolbox"]
+  enabled:
+    - nvenc
+    - qsv
+
+  # CPU 编码器作为兜底（推荐开启，提高成功率）
+  cpu_fallback: true
+
+  # NVIDIA NVENC 配置
+  nvenc:
+    enabled: true
+    max_concurrent: 3    # 单卡并发上限（3-6根据显存调整）
+    device: -1           # GPU设备ID，-1表示自动选择
+    fallback_to: qsv     # 失败时回退编码器
+
+  # Intel QSV 配置
+  qsv:
+    enabled: true
+    max_concurrent: 2    # QSV并发上限
+    device: null         # null 表示默认设备
+    fallback_to: cpu     # 失败时回退到CPU
+
+  # Apple VideoToolbox 配置 (仅 macOS)
+  videotoolbox:
+    enabled: false       # macOS上设为true
+    max_concurrent: 3
+    fallback_to: cpu
+
+  # CPU 软件编码配置
+  cpu:
+    enabled: true
+    max_concurrent: 4    # CPU并发数（根据核心数调整）
+    preset: medium       # 编码预设：ultrafast/fast/medium/slow
+
+# ============================================================
+# 调度配置（仅在 --multi-gpu 多编码器模式下生效）
+# ============================================================
+scheduler:
+  max_total_concurrent: 6              # 总并发上限（跨所有编码器）
+  strategy: priority                   # priority | least_loaded | round_robin
+  retry_per_encoder: 1                 # 每种编码器的重试次数（预留字段）
+
+# ============================================================
+# 文件处理
+# ============================================================
+files:
+  min_size_mb: 100           # 小于此大小跳过（避免处理小文件）
+  keep_structure: true       # 保持原目录结构到输出
+  skip_existing: true        # 目标文件存在则跳过（避免重复处理）
+
+# ============================================================
+# 📝 常见使用场景配置示例
+# ============================================================
+#
+# 【场景1：单GPU NVENC，兼容旧SBVC.py程序】
+# encoders:
+#   enabled: ["nvenc"]
+#   cpu_fallback: false
+#   nvenc:
+#     max_concurrent: 3
+#
+# 【场景2：多GPU或混合硬件，启用智能调度】
+# 命令：python main.py --multi-gpu
+# encoders:
+#   enabled: ["nvenc", "qsv"]
+#   cpu_fallback: true
+# scheduler:
+#   strategy: least_loaded
+#   max_total_concurrent: 6
+#
+# 【场景3：仅CPU软件编码（无硬件加速）】
+# 命令：python main.py --hw-accel none --enable-software-fallback
+# 或直接在配置中：
+# encoders:
+#   enabled: []
+#   cpu_fallback: true
+#
+# 【场景4：macOS VideoToolbox】
+# encoders:
+#   enabled: ["videotoolbox"]
+#   cpu_fallback: true
+#   videotoolbox:
+#     enabled: true
+#     max_concurrent: 3
+#
+# 【场景5：高吞吐量配置（多卡/高性能服务器）】
+# encoders:
+#   nvenc:
+#     max_concurrent: 6
+#   qsv:
+#     max_concurrent: 4
+#   cpu:
+#     max_concurrent: 8
+# scheduler:
+#   max_total_concurrent: 12
+#   strategy: least_loaded

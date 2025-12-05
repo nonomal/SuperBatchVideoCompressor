@@ -1,0 +1,7 @@
+# 运行依赖
+pyyaml>=6.0
+
+# 测试/开发依赖
+pytest>=7.0
+
+# 说明：FFmpeg/ffprobe 需系统已安装（非 pip 依赖）
