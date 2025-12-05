@@ -19,6 +19,15 @@ DEFAULT_LOG_FOLDER = "./logs"
 MIN_BITRATE = 500000  # 最小码率 500kbps
 BITRATE_RATIO = 0.5   # 压缩比例
 
+# 根据分辨率的最大码率封顶（bps）
+# 键为短边像素数，值为最大码率
+MAX_BITRATE_BY_RESOLUTION = {
+    720: 1500000,    # 720p: 1.5 Mbps
+    1080: 3000000,   # 1080p: 3 Mbps
+    1440: 5000000,   # 1440p (2K): 5 Mbps
+    2160: 9000000,   # 4K: 9 Mbps
+}
+
 # ============================================================
 # 音频配置
 # ============================================================
@@ -120,6 +129,7 @@ DEFAULT_CONFIG = {
             "forced": 0,
             "ratio": BITRATE_RATIO,
             "min": MIN_BITRATE,
+            "max_by_resolution": MAX_BITRATE_BY_RESOLUTION,
         }
     },
     "fps": {

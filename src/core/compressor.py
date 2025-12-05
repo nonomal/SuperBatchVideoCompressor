@@ -81,11 +81,12 @@ def compress_video(
     enable_software_encoding: bool = False,
     limit_fps_software_decode: bool = True,
     limit_fps_software_encode: bool = True,
-    max_fps: int = 30
+    max_fps: int = 30,
+    max_bitrate_by_resolution: dict = None
 ) -> Tuple[Any, str, Dict[str, Any]]:
     """
     压缩单个视频文件
-    
+
     Args:
         filepath: 输入文件路径
         input_folder: 输入文件夹根路径
@@ -100,7 +101,8 @@ def compress_video(
         limit_fps_software_decode: 软件解码时是否限制帧率
         limit_fps_software_encode: 软件编码时是否限制帧率
         max_fps: 最大帧率
-        
+        max_bitrate_by_resolution: 根据分辨率的最大码率配置字典
+
     Returns:
         (结果状态, 错误信息, 统计信息字典)
     """
@@ -129,7 +131,8 @@ def compress_video(
         # 计算目标码率
         new_bitrate = calculate_target_bitrate(
             original_bitrate, width, height,
-            force_bitrate, forced_bitrate
+            force_bitrate, forced_bitrate,
+            max_bitrate_by_resolution
         )
         stats["new_bitrate"] = new_bitrate
         

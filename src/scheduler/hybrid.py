@@ -70,39 +70,39 @@ class HybridScheduler:
         )
     
     def _get_next_encoder(self) -> Optional[EncoderType]:
-        """根据调度策略选择下一个编码器"""
-        if not self.enabled_encoders:
-            return None
-        
-        # CPU 兜底作为额外候选（不参与调度策略权重，但可在没有可用硬件时被选择）
-        cpu_pool = self.encoder_pools.get(EncoderType.CPU) if self.cpu_fallback else None
-        cpu_available = cpu_pool and cpu_pool.can_accept_task()
-        
-        if self.strategy == "priority":
-            for encoder_type in self.enabled_encoders:
-                pool = self.encoder_pools.get(encoder_type)
-                if pool and pool.can_accept_task():
-                    return encoder_type
-            if cpu_available:
-                return EncoderType.CPU
-        
-        elif self.strategy == "least_loaded":
-            best_encoder = None
-            min_load = float('inf')
-            candidates = list(self.enabled_encoders)
-            if cpu_available:
-                candidates.append(EncoderType.CPU)
-            for encoder_type in candidates:
-                pool = self.encoder_pools.get(encoder_type)
-                if pool and pool.can_accept_task():
-                    load = pool.current_tasks / pool.max_concurrent
-                    if load < min_load:
-                        min_load = load
-                        best_encoder = encoder_type
-            return best_encoder
-        
-        elif self.strategy == "round_robin":
-            with self._lock:
+        """根据调度策略选择下一个编码器（线程安全）"""
+        with self._lock:
+            if not self.enabled_encoders:
+                return None
+            
+            # CPU 兜底作为额外候选（不参与调度策略权重，但可在没有可用硬件时被选择）
+            cpu_pool = self.encoder_pools.get(EncoderType.CPU) if self.cpu_fallback else None
+            cpu_available = cpu_pool and cpu_pool.can_accept_task()
+            
+            if self.strategy == "priority":
+                for encoder_type in self.enabled_encoders:
+                    pool = self.encoder_pools.get(encoder_type)
+                    if pool and pool.can_accept_task():
+                        return encoder_type
+                if cpu_available:
+                    return EncoderType.CPU
+            
+            elif self.strategy == "least_loaded":
+                best_encoder = None
+                min_load = float('inf')
+                candidates = list(self.enabled_encoders)
+                if cpu_available:
+                    candidates.append(EncoderType.CPU)
+                for encoder_type in candidates:
+                    pool = self.encoder_pools.get(encoder_type)
+                    if pool and pool.can_accept_task():
+                        load = pool.current_tasks / pool.max_concurrent
+                        if load < min_load:
+                            min_load = load
+                            best_encoder = encoder_type
+                return best_encoder
+            
+            elif self.strategy == "round_robin":
                 for _ in range(len(self.enabled_encoders)):
                     encoder_type = self.enabled_encoders[self._round_robin_index]
                     self._round_robin_index = (
@@ -111,10 +111,10 @@ class HybridScheduler:
                     pool = self.encoder_pools.get(encoder_type)
                     if pool and pool.can_accept_task():
                         return encoder_type
-            if cpu_available:
-                return EncoderType.CPU
-        
-        return None
+                if cpu_available:
+                    return EncoderType.CPU
+            
+            return None
     
     def _get_fallback_encoder(self, current: EncoderType) -> Optional[EncoderType]:
         """获取回退编码器"""
@@ -220,12 +220,27 @@ class HybridScheduler:
                     else:
                         pool.release(success=False)
                         self.logger.warning(f"{current_encoder.value} 编码失败: {result.error}")
-                        current_encoder = self._get_fallback_encoder(current_encoder)
+                        next_encoder = self._get_fallback_encoder(current_encoder)
+                        if next_encoder is None:
+                            # 没有更多回退选项，立即返回失败
+                            return TaskResult(
+                                success=False,
+                                error=f"所有编码器均失败，最后错误: {result.error}",
+                                fallback_chain=fallback_chain
+                            )
+                        current_encoder = next_encoder
                         
                 except Exception as e:
                     pool.release(success=False)
                     self.logger.error(f"任务执行异常: {e}")
-                    current_encoder = self._get_fallback_encoder(current_encoder)
+                    next_encoder = self._get_fallback_encoder(current_encoder)
+                    if next_encoder is None:
+                        return TaskResult(
+                            success=False,
+                            error=f"所有编码器均失败，异常: {e}",
+                            fallback_chain=fallback_chain
+                        )
+                    current_encoder = next_encoder
             
             # 理论上不会到达这里
             return TaskResult(
