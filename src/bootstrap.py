@@ -21,12 +21,16 @@ from src.utils.encoder_check import detect_available_encoders
 
 def enforce_utf8_windows() -> None:
     """在 Windows 强制 stdout/stderr 使用 UTF-8，避免中文乱码"""
-    if sys.platform != 'win32':
+    if sys.platform != "win32":
         return
-    if sys.stdout.encoding != 'utf-8':
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    if sys.stderr.encoding != 'utf-8':
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    if sys.stdout.encoding != "utf-8":
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, encoding="utf-8", errors="replace"
+        )
+    if sys.stderr.encoding != "utf-8":
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, encoding="utf-8", errors="replace"
+        )
 
 
 def prepare_environment(config: Dict[str, Any]) -> Dict[str, Any]:

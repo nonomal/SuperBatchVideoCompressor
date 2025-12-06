@@ -17,15 +17,15 @@ DEFAULT_LOG_FOLDER = "./logs"
 # 码率配置
 # ============================================================
 MIN_BITRATE = 500000  # 最小码率 500kbps
-BITRATE_RATIO = 0.5   # 压缩比例
+BITRATE_RATIO = 0.5  # 压缩比例
 
 # 根据分辨率的最大码率封顶（bps）
 # 键为短边像素数，值为最大码率
 MAX_BITRATE_BY_RESOLUTION = {
-    720: 1500000,    # 720p: 1.5 Mbps
-    1080: 3000000,   # 1080p: 3 Mbps
-    1440: 5000000,   # 1440p (2K): 5 Mbps
-    2160: 9000000,   # 4K: 9 Mbps
+    720: 1500000,  # 720p: 1.5 Mbps
+    1080: 3000000,  # 1080p: 3 Mbps
+    1440: 5000000,  # 1440p (2K): 5 Mbps
+    2160: 9000000,  # 4K: 9 Mbps
 }
 
 # ============================================================
@@ -100,9 +100,24 @@ SW_ENCODERS = {
 # 支持的视频格式
 # ============================================================
 SUPPORTED_VIDEO_EXTENSIONS = (
-    '.mp4', '.mkv', '.ts', '.avi', '.rm', '.rmvb', '.wmv',
-    '.m2ts', '.mpeg', '.mpg', '.mov', '.flv', '.3gp',
-    '.webm', '.m4v', '.vob', '.ogv', '.f4v'
+    ".mp4",
+    ".mkv",
+    ".ts",
+    ".avi",
+    ".rm",
+    ".rmvb",
+    ".wmv",
+    ".m2ts",
+    ".mpeg",
+    ".mpg",
+    ".mov",
+    ".flv",
+    ".3gp",
+    ".webm",
+    ".m4v",
+    ".vob",
+    ".ogv",
+    ".f4v",
 )
 
 # ============================================================
@@ -130,7 +145,7 @@ DEFAULT_CONFIG = {
             "ratio": BITRATE_RATIO,
             "min": MIN_BITRATE,
             "max_by_resolution": MAX_BITRATE_BY_RESOLUTION,
-        }
+        },
     },
     "fps": {
         "max": MAX_FPS,
@@ -154,7 +169,7 @@ DEFAULT_CONFIG = {
             "enabled": True,
             "max_concurrent": 4,
             "preset": "medium",
-        }
+        },
     },
     "scheduler": {
         "max_total_concurrent": 5,
@@ -163,5 +178,5 @@ DEFAULT_CONFIG = {
         "min_size_mb": MIN_FILE_SIZE_MB,
         "keep_structure": KEEP_STRUCTURE_FLAG,
         "skip_existing": True,
-    }
+    },
 }

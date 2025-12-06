@@ -15,10 +15,10 @@ from src.config.defaults import SUPPORTED_VIDEO_EXTENSIONS
 def get_video_files(input_folder: str) -> List[str]:
     """
     获取输入文件夹中的所有视频文件
-    
+
     Args:
         input_folder: 输入文件夹路径
-        
+
     Returns:
         视频文件路径列表
     """
@@ -33,55 +33,50 @@ def get_video_files(input_folder: str) -> List[str]:
 def detect_hw_accel() -> str:
     """
     自动检测当前平台支持的硬件加速类型
-    
+
     Returns:
         硬件加速类型: nvenc, videotoolbox, qsv, 或 none
     """
     import platform
+
     system = platform.system()
-    
+
     # Mac 优先使用 VideoToolbox
     if system == "Darwin":
         return "videotoolbox"
-    
+
     # Windows/Linux 尝试检测 NVIDIA GPU
     if system in ("Windows", "Linux"):
         try:
             result = subprocess.run(
-                ['nvidia-smi'],
-                capture_output=True,
-                text=True,
-                timeout=5
+                ["nvidia-smi"], capture_output=True, text=True, timeout=5
             )
             if result.returncode == 0:
                 return "nvenc"
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
-        
+
         # 尝试检测 Intel QSV
         try:
             if system == "Linux":
                 result = subprocess.run(
-                    ['vainfo'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
+                    ["vainfo"], capture_output=True, text=True, timeout=5
                 )
                 if result.returncode == 0 and "Intel" in result.stdout:
                     return "qsv"
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
-    
+
     return "none"
 
 
 def get_hw_accel_type(hw_accel_arg: str) -> str:
     """
     获取实际使用的硬件加速类型
-    
+
     Args:
         hw_accel_arg: 命令行参数值 (auto/nvenc/videotoolbox/qsv/none)
-        
+
     Returns:
         实际硬件加速类型
     """

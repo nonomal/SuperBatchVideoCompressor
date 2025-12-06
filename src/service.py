@@ -78,11 +78,11 @@ def run_batch(config: Dict[str, Any]) -> int:
 
     stats = scheduler.get_stats()
     logging.info(f"总并发上限: {stats['max_total_concurrent']}")
-    hw_encoders = stats['enabled_hw_encoders']
+    hw_encoders = stats["enabled_hw_encoders"]
     if hw_encoders:
         logging.info(f"硬件编码器: {hw_encoders}")
     logging.info(f"CPU 兜底: {'启用' if stats['cpu_fallback'] else '禁用'}")
-    for enc_name, enc_stats in stats['encoder_slots'].items():
+    for enc_name, enc_stats in stats["encoder_slots"].items():
         logging.info(f"  - {enc_name}: 最大并发 {enc_stats['max']}")
     logging.info("回退策略: 硬解+硬编 → 软解+硬编 → 其他编码器 → CPU")
     logging.info("-" * 60)
@@ -110,7 +110,9 @@ def run_batch(config: Dict[str, Any]) -> int:
                     sample_file, input_folder, output_folder, keep_structure
                 )
                 rel_path = os.path.relpath(sample_file, input_folder)
-                logging.info(f"  {i}. {rel_path} → {os.path.relpath(sample_output, output_folder)}")
+                logging.info(
+                    f"  {i}. {rel_path} → {os.path.relpath(sample_output, output_folder)}"
+                )
             if total_files > 3:
                 logging.info(f"  ... 还有 {total_files - 3} 个文件")
         else:
@@ -120,10 +122,14 @@ def run_batch(config: Dict[str, Any]) -> int:
                 sample_output, _ = resolve_output_paths(
                     sample_file, input_folder, output_folder, keep_structure
                 )
-                logging.info(f"  {i}. {os.path.basename(sample_file)} → {os.path.basename(sample_output)}")
+                logging.info(
+                    f"  {i}. {os.path.basename(sample_file)} → {os.path.basename(sample_output)}"
+                )
             if total_files > 3:
                 logging.info(f"  ... 还有 {total_files - 3} 个文件")
-            logging.warning("如需保持目录结构，请在配置文件中设置 keep_structure: true 或移除 --no-keep-structure 参数")
+            logging.warning(
+                "如需保持目录结构，请在配置文件中设置 keep_structure: true 或移除 --no-keep-structure 参数"
+            )
 
     if dry_run:
         logging.info("[DRY RUN] 预览模式，不实际执行")
@@ -148,7 +154,16 @@ def run_batch(config: Dict[str, Any]) -> int:
         )
         if os.path.exists(output_path):
             logging.info(f"[跳过] 输出已存在: {os.path.basename(output_path)}")
-            results.append((filepath, TaskResult(success=True, filepath=filepath, stats={"status": RESULT_SKIP_EXISTS})))
+            results.append(
+                (
+                    filepath,
+                    TaskResult(
+                        success=True,
+                        filepath=filepath,
+                        stats={"status": RESULT_SKIP_EXISTS},
+                    ),
+                )
+            )
             skipped_count += 1
             continue
         files_to_process.append(filepath)
@@ -164,7 +179,7 @@ def run_batch(config: Dict[str, Any]) -> int:
         bitrate: int,
         source_codec: str,
         encoder_type: EncoderType,
-        decode_mode: DecodeMode
+        decode_mode: DecodeMode,
     ) -> Dict[str, Any]:
         """根据编码器类型和解码模式构建命令"""
         hw_accel_map = {
@@ -177,33 +192,62 @@ def run_batch(config: Dict[str, Any]) -> int:
 
         # CPU 软编码
         if encoder_type == EncoderType.CPU:
-            limit_fps = (decode_mode == DecodeMode.SW_DECODE_LIMITED and limit_fps_software_encode)
+            limit_fps = (
+                decode_mode == DecodeMode.SW_DECODE_LIMITED
+                and limit_fps_software_encode
+            )
             return build_sw_encode_command(
-                filepath, temp_filename, bitrate, output_codec,
-                limit_fps=limit_fps, max_fps=max_fps, preset=cpu_preset
+                filepath,
+                temp_filename,
+                bitrate,
+                output_codec,
+                limit_fps=limit_fps,
+                max_fps=max_fps,
+                preset=cpu_preset,
             )
 
         # 硬件编码
-        use_hw_decode = (decode_mode == DecodeMode.HW_DECODE)
-        limit_fps = (decode_mode == DecodeMode.SW_DECODE_LIMITED and limit_fps_software_decode)
+        use_hw_decode = decode_mode == DecodeMode.HW_DECODE
+        limit_fps = (
+            decode_mode == DecodeMode.SW_DECODE_LIMITED and limit_fps_software_decode
+        )
 
         result = build_hw_encode_command(
-            filepath, temp_filename, bitrate, source_codec, hw_accel, output_codec,
-            use_hw_decode=use_hw_decode, limit_fps=limit_fps, max_fps=max_fps
+            filepath,
+            temp_filename,
+            bitrate,
+            source_codec,
+            hw_accel,
+            output_codec,
+            use_hw_decode=use_hw_decode,
+            limit_fps=limit_fps,
+            max_fps=max_fps,
         )
 
         if result is None:
             # 硬件不支持此编码格式，回退到 CPU
             return build_sw_encode_command(
-                filepath, temp_filename, bitrate, output_codec,
-                limit_fps=limit_fps_software_encode, max_fps=max_fps, preset=cpu_preset
+                filepath,
+                temp_filename,
+                bitrate,
+                output_codec,
+                limit_fps=limit_fps_software_encode,
+                max_fps=max_fps,
+                preset=cpu_preset,
             )
 
         return result
 
-    def encode_file(filepath: str, encoder_type: EncoderType, decode_mode: DecodeMode) -> TaskResult:
+    def encode_file(
+        filepath: str, encoder_type: EncoderType, decode_mode: DecodeMode
+    ) -> TaskResult:
         """编码单个文件"""
-        stats = {"original_size": 0, "new_size": 0, "original_bitrate": 0, "new_bitrate": 0}
+        stats = {
+            "original_size": 0,
+            "new_size": 0,
+            "original_bitrate": 0,
+            "new_bitrate": 0,
+        }
 
         try:
             file_size = os.path.getsize(filepath)
@@ -220,9 +264,12 @@ def run_batch(config: Dict[str, Any]) -> int:
             stats["original_bitrate"] = original_bitrate
 
             new_bitrate = calculate_target_bitrate(
-                original_bitrate, width, height,
-                force_bitrate, forced_bitrate,
-                max_bitrate_by_resolution
+                original_bitrate,
+                width,
+                height,
+                force_bitrate,
+                forced_bitrate,
+                max_bitrate_by_resolution,
             )
             stats["new_bitrate"] = new_bitrate
 
@@ -238,14 +285,22 @@ def run_batch(config: Dict[str, Any]) -> int:
 
             # 构建编码命令
             cmd_info = build_encode_command(
-                filepath, temp_filename, new_bitrate, source_codec,
-                encoder_type, decode_mode
+                filepath,
+                temp_filename,
+                new_bitrate,
+                source_codec,
+                encoder_type,
+                decode_mode,
             )
 
-            logging.info(f"[编码] {encoder_type.value}/{decode_mode.value}: {os.path.basename(filepath)} -> {cmd_info['name']}")
+            logging.info(
+                f"[编码] {encoder_type.value}/{decode_mode.value}: {os.path.basename(filepath)} -> {cmd_info['name']}"
+            )
 
             # 打印完整的 ffmpeg 命令
-            cmd_str = ' '.join(f'"{arg}"' if ' ' in str(arg) else str(arg) for arg in cmd_info["cmd"])
+            cmd_str = " ".join(
+                f'"{arg}"' if " " in str(arg) else str(arg) for arg in cmd_info["cmd"]
+            )
             logging.info(f"FFmpeg 命令: {cmd_str}")
 
             # 执行编码
@@ -257,18 +312,22 @@ def run_batch(config: Dict[str, Any]) -> int:
                         os.remove(temp_filename)
                     except Exception as e:
                         logging.warning(f"临时文件删除失败: {temp_filename}, 错误: {e}")
-                return TaskResult(success=False, filepath=filepath, error=error, stats=stats)
+                return TaskResult(
+                    success=False, filepath=filepath, error=error, stats=stats
+                )
 
             # 移动文件
             try:
                 shutil.move(temp_filename, new_filename)
             except Exception as e:
-                return TaskResult(success=False, filepath=filepath, error=str(e), stats=stats)
+                return TaskResult(
+                    success=False, filepath=filepath, error=str(e), stats=stats
+                )
 
             new_size = os.path.getsize(new_filename)
             stats["new_size"] = new_size
             stats["status"] = RESULT_SUCCESS
-            stats["method"] = cmd_info['name']
+            stats["method"] = cmd_info["name"]
 
             compression_ratio = (1 - new_size / file_size) * 100 if file_size > 0 else 0
             logging.info(
@@ -280,7 +339,9 @@ def run_batch(config: Dict[str, Any]) -> int:
 
         except Exception as e:
             logging.error(f"[异常] 处理 {filepath} 时发生错误: {e}")
-            return TaskResult(success=False, filepath=filepath, error=str(e), stats=stats)
+            return TaskResult(
+                success=False, filepath=filepath, error=str(e), stats=stats
+            )
 
     def process_file(filepath: str):
         nonlocal completed
@@ -292,7 +353,9 @@ def run_batch(config: Dict[str, Any]) -> int:
             retry_info = ""
             if result.retry_history:
                 retry_info = f" [尝试: {' → '.join(result.retry_history)}]"
-            logging.info(f"[进度] {completed}/{total_files} ({completed/total_files*100:.1f}%){retry_info}")
+            logging.info(
+                f"[进度] {completed}/{total_files} ({completed/total_files*100:.1f}%){retry_info}"
+            )
 
         return (filepath, result)
 
@@ -310,11 +373,17 @@ def run_batch(config: Dict[str, Any]) -> int:
         scheduler.shutdown()
 
     # 统计结果
-    skip_exists_count = sum(1 for _, r in results if r.stats.get("status") == RESULT_SKIP_EXISTS)
-    skip_size_count = sum(1 for _, r in results if r.stats.get("status") == RESULT_SKIP_SIZE)
+    skip_exists_count = sum(
+        1 for _, r in results if r.stats.get("status") == RESULT_SKIP_EXISTS
+    )
+    skip_size_count = sum(
+        1 for _, r in results if r.stats.get("status") == RESULT_SKIP_SIZE
+    )
     success_count = sum(
-        1 for _, r in results
-        if r.success and r.stats.get("status") not in (RESULT_SKIP_SIZE, RESULT_SKIP_EXISTS)
+        1
+        for _, r in results
+        if r.success
+        and r.stats.get("status") not in (RESULT_SKIP_SIZE, RESULT_SKIP_EXISTS)
     )
     fail_count = len(results) - success_count - skip_exists_count - skip_size_count
 
@@ -338,8 +407,10 @@ def run_batch(config: Dict[str, Any]) -> int:
     # 显示调度器最终统计
     final_stats = scheduler.get_stats()
     logging.info("编码器详细统计:")
-    for enc_name, enc_stats in final_stats['encoder_slots'].items():
-        logging.info(f"  - {enc_name}: 完成 {enc_stats['completed']}, 失败 {enc_stats['failed']}")
+    for enc_name, enc_stats in final_stats["encoder_slots"].items():
+        logging.info(
+            f"  - {enc_name}: 完成 {enc_stats['completed']}, 失败 {enc_stats['failed']}"
+        )
     logging.info("=" * 60)
 
     return 0 if fail_count == 0 else 1

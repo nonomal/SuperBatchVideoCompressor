@@ -32,14 +32,11 @@ def get_video_files(input_folder: str) -> list:
 
 
 def resolve_output_paths(
-    filepath: str,
-    input_folder: str,
-    output_folder: str,
-    keep_structure: bool = True
+    filepath: str, input_folder: str, output_folder: str, keep_structure: bool = True
 ) -> Tuple[str, str]:
     """
     根据输入文件和配置生成输出路径和临时路径
-    
+
     Returns:
         (最终输出文件路径, 临时文件路径)
     """
@@ -52,6 +49,7 @@ def resolve_output_paths(
         base_name = f"{source_path.stem}.mp4"
         output_path = Path(output_folder) / base_name
 
-    new_filename = str(output_path)
-    temp_filename = str(output_path.parent / f"tmp_{output_path.name}")
+    # 统一使用 POSIX 风格路径，避免 Windows 下反斜杠导致路径对比或日志不一致
+    new_filename = output_path.as_posix()
+    temp_filename = (output_path.parent / f"tmp_{output_path.name}").as_posix()
     return new_filename, temp_filename

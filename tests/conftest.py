@@ -28,7 +28,7 @@ def sample_config():
                 "forced": 0,
                 "ratio": 0.5,
                 "min": 500000,
-            }
+            },
         },
         "fps": {
             "max": 30,
@@ -49,5 +49,5 @@ def sample_config():
         "files": {
             "min_size_mb": 10,
             "keep_structure": True,
-        }
+        },
     }

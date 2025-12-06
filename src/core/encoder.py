@@ -29,13 +29,17 @@ def execute_ffmpeg(cmd: list) -> Tuple[bool, str]:
     Returns:
         (成功标志, 错误信息)
     """
-    from src.utils.process import register_process, unregister_process, is_shutdown_requested
+    from src.utils.process import (
+        register_process,
+        unregister_process,
+        is_shutdown_requested,
+    )
 
     if is_shutdown_requested():
         return False, "程序正在退出"
 
     # 打印完整的 ffmpeg 命令（便于调试）
-    cmd_str = ' '.join(f'"{arg}"' if ' ' in str(arg) else str(arg) for arg in cmd)
+    cmd_str = " ".join(f'"{arg}"' if " " in str(arg) else str(arg) for arg in cmd)
     logging.debug(f"FFmpeg 命令: {cmd_str}")
 
     try:
@@ -45,14 +49,14 @@ def execute_ffmpeg(cmd: list) -> Tuple[bool, str]:
             stderr=subprocess.PIPE,
             universal_newlines=True,
             encoding="utf-8",
-            errors="replace"
+            errors="replace",
         )
         register_process(process)
         try:
             stdout, stderr = process.communicate()
         finally:
             unregister_process(process)
-        
+
         # 检查是否有特定错误模式
         known_errors = [
             "Impossible to convert between the formats",
@@ -63,14 +67,14 @@ def execute_ffmpeg(cmd: list) -> Tuple[bool, str]:
             "Cannot load",
             "Driver does not support",
         ]
-        
+
         if process.returncode != 0:
             for error_pattern in known_errors:
                 if error_pattern in stderr:
                     return False, error_pattern
             # 其他未知错误
             return False, stderr[-500:] if len(stderr) > 500 else stderr
-        
+
         return True, None
     except Exception as e:
         return False, str(e)
@@ -82,7 +86,7 @@ def calculate_target_bitrate(
     height: int,
     force_bitrate: bool = False,
     forced_value: int = 0,
-    max_bitrate_by_resolution: dict = None
+    max_bitrate_by_resolution: dict = None,
 ) -> int:
     """
     计算目标码率
@@ -103,6 +107,7 @@ def calculate_target_bitrate(
 
     if max_bitrate_by_resolution is None:
         from src.config.defaults import MAX_BITRATE_BY_RESOLUTION
+
         max_bitrate_by_resolution = MAX_BITRATE_BY_RESOLUTION
 
     # 根据分辨率确定最大码率上限（短边分档封顶）
@@ -162,11 +167,11 @@ def build_hw_encode_command(
     output_codec: str = "hevc",
     use_hw_decode: bool = True,
     limit_fps: bool = False,
-    max_fps: int = 30
+    max_fps: int = 30,
 ) -> Dict[str, Any]:
     """
     构建硬件编码命令
-    
+
     Args:
         filepath: 输入文件路径
         temp_filename: 临时输出文件路径
@@ -177,51 +182,51 @@ def build_hw_encode_command(
         use_hw_decode: 是否使用硬件解码
         limit_fps: 是否限制帧率（仅软解时有效）
         max_fps: 最大帧率
-        
+
     Returns:
         {"name": str, "cmd": list, "encoder": str} 或 None（如果不支持）
     """
     hw_config = HW_ENCODERS.get(hw_accel, {})
     hw_encoder = hw_config.get(output_codec)
-    
+
     if not hw_encoder:
         return None
-    
+
     hw_display = ENCODER_DISPLAY_NAMES.get(hw_accel, hw_accel)
     codec_display = CODEC_DISPLAY_NAMES.get(output_codec, output_codec.upper())
-    
-    cmd = ['ffmpeg', '-y', '-hide_banner']
-    
+
+    cmd = ["ffmpeg", "-y", "-hide_banner"]
+
     # 硬解模式
     if use_hw_decode and source_codec in SUPPORTED_HW_DECODE_CODECS:
         hwaccel = hw_config.get("hwaccel")
         hwaccel_output_format = hw_config.get("hwaccel_output_format")
-        
+
         if hwaccel:
-            cmd.extend(['-hwaccel', hwaccel])
+            cmd.extend(["-hwaccel", hwaccel])
             if hwaccel_output_format:
-                cmd.extend(['-hwaccel_output_format', hwaccel_output_format])
-            cmd.extend(['-i', filepath])
-            cmd.extend(['-c:v', hw_encoder, '-b:v', str(bitrate)])
-            cmd.extend(['-c:a', 'aac', '-b:a', AUDIO_BITRATE, temp_filename])
+                cmd.extend(["-hwaccel_output_format", hwaccel_output_format])
+            cmd.extend(["-i", filepath])
+            cmd.extend(["-c:v", hw_encoder, "-b:v", str(bitrate)])
+            cmd.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE, temp_filename])
             return {
                 "name": f"{hw_display} ({codec_display}, 硬解+硬编)",
                 "cmd": cmd,
-                "encoder": hw_accel
+                "encoder": hw_accel,
             }
-    
+
     # 软解模式
-    cmd = ['ffmpeg', '-y', '-hide_banner', '-i', filepath]
-    
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-i", filepath]
+
     if limit_fps:
-        cmd.extend(['-vf', f'fps={max_fps}'])
+        cmd.extend(["-vf", f"fps={max_fps}"])
         name = f"{hw_display} ({codec_display}, 软解+硬编, 限{max_fps}fps)"
     else:
         name = f"{hw_display} ({codec_display}, 软解+硬编)"
-    
-    cmd.extend(['-c:v', hw_encoder, '-b:v', str(bitrate)])
-    cmd.extend(['-c:a', 'aac', '-b:a', AUDIO_BITRATE, temp_filename])
-    
+
+    cmd.extend(["-c:v", hw_encoder, "-b:v", str(bitrate)])
+    cmd.extend(["-c:a", "aac", "-b:a", AUDIO_BITRATE, temp_filename])
+
     return {"name": name, "cmd": cmd, "encoder": hw_accel}
 
 
@@ -232,11 +237,11 @@ def build_sw_encode_command(
     output_codec: str = "hevc",
     limit_fps: bool = False,
     max_fps: int = 30,
-    preset: str = "medium"
+    preset: str = "medium",
 ) -> Dict[str, Any]:
     """
     构建软件编码命令（CPU）
-    
+
     Args:
         filepath: 输入文件路径
         temp_filename: 临时输出文件路径
@@ -245,28 +250,30 @@ def build_sw_encode_command(
         limit_fps: 是否限制帧率
         max_fps: 最大帧率
         preset: 编码预设
-        
+
     Returns:
         {"name": str, "cmd": list, "encoder": str}
     """
     sw_encoder = SW_ENCODERS.get(output_codec, "libx264")
-    
-    cmd = ['ffmpeg', '-y', '-hide_banner', '-i', filepath]
-    
+
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-i", filepath]
+
     if limit_fps:
-        cmd.extend(['-vf', f'fps={max_fps}'])
+        cmd.extend(["-vf", f"fps={max_fps}"])
         name = f"CPU ({sw_encoder}, 限{max_fps}fps)"
     else:
         name = f"CPU ({sw_encoder})"
-    
-    cmd.extend(['-c:v', sw_encoder])
-    
+
+    cmd.extend(["-c:v", sw_encoder])
+
     # 编码器特定参数
     if sw_encoder in ("libx265", "libx264"):
-        cmd.extend(['-preset', preset])
+        cmd.extend(["-preset", preset])
     elif sw_encoder == "libsvtav1":
-        cmd.extend(['-preset', '6'])
-    
-    cmd.extend(['-b:v', str(bitrate), '-c:a', 'aac', '-b:a', AUDIO_BITRATE, temp_filename])
-    
+        cmd.extend(["-preset", "6"])
+
+    cmd.extend(
+        ["-b:v", str(bitrate), "-c:a", "aac", "-b:a", AUDIO_BITRATE, temp_filename]
+    )
+
     return {"name": name, "cmd": cmd, "encoder": "cpu"}

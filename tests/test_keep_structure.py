@@ -206,7 +206,9 @@ class TestPathMappingConsistency:
             input_dir = os.path.dirname(rel_input)
             output_dir = os.path.dirname(rel_output)
 
-            assert input_dir == output_dir, f"目录结构不一致: {input_dir} != {output_dir}"
+            assert (
+                input_dir == output_dir
+            ), f"目录结构不一致: {input_dir} != {output_dir}"
 
     def test_file_name_preservation(self):
         """测试文件名保持（仅扩展名改变）"""
@@ -229,7 +231,9 @@ class TestPathMappingConsistency:
             input_stem = Path(filepath).stem
             output_stem = Path(new_filename).stem
 
-            assert input_stem == output_stem, f"文件名改变: {input_stem} != {output_stem}"
+            assert (
+                input_stem == output_stem
+            ), f"文件名改变: {input_stem} != {output_stem}"
             assert new_filename.endswith(".mp4"), "输出文件应该是 .mp4 格式"
 
 
