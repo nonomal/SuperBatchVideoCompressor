@@ -16,10 +16,10 @@ from src.config.defaults import SUPPORTED_VIDEO_EXTENSIONS
 def get_video_files(input_folder: str) -> list:
     """
     获取输入文件夹中的所有视频文件
-    
+
     Args:
         input_folder: 输入文件夹路径
-        
+
     Returns:
         视频文件路径列表
     """
@@ -43,13 +43,15 @@ def resolve_output_paths(
     Returns:
         (最终输出文件路径, 临时文件路径)
     """
+    source_path = Path(filepath)
+
     if keep_structure:
-        relative_path = os.path.relpath(filepath, input_folder)
-        output_path = Path(output_folder) / Path(relative_path).with_suffix('.mp4')
+        relative_path = Path(os.path.relpath(filepath, input_folder))
+        output_path = (Path(output_folder) / relative_path).with_suffix(".mp4")
     else:
-        base_name = Path(filepath).stem + ".mp4"
+        base_name = f"{source_path.stem}.mp4"
         output_path = Path(output_folder) / base_name
-    
+
     new_filename = str(output_path)
-    temp_filename = os.path.join(os.path.dirname(new_filename), "tmp_" + os.path.basename(new_filename))
+    temp_filename = str(output_path.parent / f"tmp_{output_path.name}")
     return new_filename, temp_filename

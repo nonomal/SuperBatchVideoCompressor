@@ -4,17 +4,19 @@
 
 ```
 .
-├── main.py                # 入口脚本，调用 CLI 主函数
-├── cli.py                 # 命令行解析、运行流程、任务调度
+├── main.py                # 薄入口，调用 CLI 主函数
+├── cli.py                 # 命令行解析，调用 bootstrap+service
 ├── config-example.yaml    # 示例配置，便于拷贝为 config.yaml
 ├── requirements.txt       # 依赖 (pyyaml)
 ├── tests/                 # Pytest 用例
 ├── src/
 │   ├── __init__.py        # 包元数据
+│   ├── bootstrap.py       # 启动准备（编码、清理、日志、信号、探测）
 │   ├── config/            # 配置加载
 │   │   ├── defaults.py    # 默认值、编码器映射、常量
 │   │   ├── loader.py      # YAML 加载与 CLI 覆盖
 │   │   └── __init__.py
+│   ├── service.py         # 服务层（CLI/未来 GUI/API 复用的执行入口）
 │   ├── core/              # 核心编码逻辑
 │   │   ├── video.py       # ffprobe 获取视频信息
 │   │   ├── encoder.py     # 码率计算、编码命令构建、FFmpeg 执行
@@ -90,14 +92,10 @@
 
 1. `main.py` 调用 `cli.main()`
 2. `cli.py` 解析命令行参数并加载配置
-3. 设置信号处理器（捕获 Ctrl+C）
-4. 启动时清理输出目录中的临时文件
-5. **检测编码器可用性**：
-   - 检查 NVENC/QSV/VideoToolbox/CPU
-   - 自动禁用不可用的编码器
-6. 创建 `AdvancedScheduler` 进行智能调度
-7. 使用线程池并发处理文件
-8. Ctrl+C 时通过 `terminate_all_ffmpeg()` 优雅终止
+3. `bootstrap.prepare_environment()`：编码设置、pycache/临时文件清理、日志初始化、信号处理、编码器检测
+4. 创建 `AdvancedScheduler` 进行智能调度（封装在 `service.run_batch` 内）
+5. 使用线程池并发处理文件
+6. Ctrl+C 时通过 `terminate_all_ffmpeg()` 优雅终止
 
 ## 配置设计
 
