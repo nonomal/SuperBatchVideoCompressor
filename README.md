@@ -99,18 +99,52 @@ scheduler:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## 目录结构保持
+
+默认情况下，程序会保持输入目录的结构：
+
+```
+输入目录:                  输出目录:
+L:/input/                 J:/Output3/
+├── video1.mkv           ├── video1.mp4
+├── Season 01/           ├── Season 01/
+│   ├── ep01.mkv        │   ├── ep01.mp4
+│   └── ep02.mkv        │   └── ep02.mp4
+└── Movies/              └── Movies/
+    └── 2024/                └── 2024/
+        └── film.mkv            └── film.mp4
+```
+
+**配置方式：**
+
+1. **配置文件**（推荐）：
+   ```yaml
+   files:
+     keep_structure: true   # 保持目录结构
+     # keep_structure: false  # 扁平化输出（所有文件输出到同一目录）
+   ```
+
+2. **命令行参数**：
+   ```bash
+   # 不保持目录结构（所有文件输出到同一目录）
+   python main.py --no-keep-structure
+   ```
+
+**提示：** 运行时会显示路径映射示例，可以确认输出结构是否符合预期。
+
 ## 命令行参数
 
 ```
 python main.py [选项]
 
 选项:
-  -i, --input PATH      输入文件夹路径
-  -o, --output PATH     输出文件夹路径
-  -c, --codec CODEC     输出编码 (hevc/avc/av1)
-  --config PATH         配置文件路径
-  --max-concurrent N    总并发数
-  --dry-run             预览模式，不实际执行
+  -i, --input PATH          输入文件夹路径
+  -o, --output PATH         输出文件夹路径
+  -c, --codec CODEC         输出编码 (hevc/avc/av1)
+  --config PATH             配置文件路径
+  --max-concurrent N        总并发数
+  --no-keep-structure       不保持原始目录结构（扁平化输出）
+  --dry-run                 预览模式，不实际执行
 ```
 
 ## 环境要求
@@ -122,6 +156,33 @@ python main.py [选项]
 
 ## 测试
 
+### 运行所有测试
+
 ```bash
 pytest
 ```
+
+### 运行特定测试
+
+```bash
+# 测试目录保持功能
+pytest tests/test_keep_structure.py -v
+
+# 测试编码器功能
+pytest tests/test_encoder.py -v
+
+# 生成覆盖率报告
+pytest --cov=src --cov-report=html
+```
+
+### 持续集成
+
+项目使用 GitHub Actions 进行自动化测试，包括：
+
+- ✅ 多平台测试（Ubuntu、Windows、macOS）
+- ✅ 多 Python 版本测试（3.8-3.14）
+- ✅ 代码质量检查
+- ✅ 目录保持功能专项测试
+- ✅ CLI 功能测试
+
+每次提交都会自动运行所有测试，确保功能稳定可靠。

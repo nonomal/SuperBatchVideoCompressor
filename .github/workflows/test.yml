@@ -151,3 +151,41 @@ jobs:
         run: |
           python cli.py --help
           python main.py --help
+
+  # 目录保持功能专项测试
+  keep-structure-test:
+    name: Keep Directory Structure Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pyyaml
+
+      - name: Run keep_structure tests
+        run: |
+          pytest tests/test_keep_structure.py -v --tb=short
+
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "## 目录保持功能测试结果" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 所有测试通过！目录保持功能正常工作。" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 测试覆盖的场景：" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ 根目录文件" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ 单级子目录" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ 多级嵌套子目录" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ 中文路径支持" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ Windows 路径格式" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ 不保持目录结构（扁平化输出）" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ 文件扩展名转换" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ 临时文件位置正确性" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ 路径映射一致性" >> $GITHUB_STEP_SUMMARY

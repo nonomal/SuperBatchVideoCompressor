@@ -22,18 +22,22 @@ from src.config.defaults import (
 def execute_ffmpeg(cmd: list) -> Tuple[bool, str]:
     """
     执行 FFmpeg 命令并检查错误
-    
+
     Args:
         cmd: FFmpeg 命令列表
-        
+
     Returns:
         (成功标志, 错误信息)
     """
     from src.utils.process import register_process, unregister_process, is_shutdown_requested
-    
+
     if is_shutdown_requested():
         return False, "程序正在退出"
-    
+
+    # 打印完整的 ffmpeg 命令（便于调试）
+    cmd_str = ' '.join(f'"{arg}"' if ' ' in str(arg) else str(arg) for arg in cmd)
+    logging.debug(f"FFmpeg 命令: {cmd_str}")
+
     try:
         process = subprocess.Popen(
             cmd,

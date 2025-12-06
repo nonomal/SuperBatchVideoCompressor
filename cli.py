@@ -140,7 +140,14 @@ def run(args, config: Dict[str, Any]) -> int:
     logging.info("=" * 60)
     logging.info("SBVC - 超级批量视频压缩器")
     logging.info("=" * 60)
-    
+
+    # 显示路径配置
+    logging.info(f"输入目录: {input_folder}")
+    logging.info(f"输出目录: {output_folder}")
+    logging.info(f"保持目录结构: {'是' if keep_structure else '否'}")
+    logging.info(f"输出编码: {output_codec}")
+    logging.info("-" * 60)
+
     stats = scheduler.get_stats()
     logging.info(f"总并发上限: {stats['max_total_concurrent']}")
     hw_encoders = stats['enabled_hw_encoders']
@@ -159,12 +166,36 @@ def run(args, config: Dict[str, Any]) -> int:
     # 预扫描任务列表
     video_files = get_video_files(input_folder)
     total_files = len(video_files)
-    
+
     if total_files == 0:
         logging.warning("未发现任何视频文件")
         return 0
-    
+
     logging.info(f"发现 {total_files} 个视频文件")
+
+    # 显示路径映射示例（帮助用户确认目录结构）
+    if total_files > 0:
+        if keep_structure:
+            logging.info("路径映射示例（保持目录结构）:")
+            for i, sample_file in enumerate(video_files[:3], 1):
+                sample_output, _ = resolve_output_paths(
+                    sample_file, input_folder, output_folder, keep_structure
+                )
+                rel_path = os.path.relpath(sample_file, input_folder)
+                logging.info(f"  {i}. {rel_path} → {os.path.relpath(sample_output, output_folder)}")
+            if total_files > 3:
+                logging.info(f"  ... 还有 {total_files - 3} 个文件")
+        else:
+            logging.warning("注意：未保持目录结构，所有文件将输出到同一目录")
+            logging.info("路径映射示例（扁平化输出）:")
+            for i, sample_file in enumerate(video_files[:3], 1):
+                sample_output, _ = resolve_output_paths(
+                    sample_file, input_folder, output_folder, keep_structure
+                )
+                logging.info(f"  {i}. {os.path.basename(sample_file)} → {os.path.basename(sample_output)}")
+            if total_files > 3:
+                logging.info(f"  ... 还有 {total_files - 3} 个文件")
+            logging.warning("如需保持目录结构，请在配置文件中设置 keep_structure: true 或移除 --no-keep-structure 参数")
     
     if args.dry_run:
         logging.info(f"[DRY RUN] 预览模式，不实际执行")
@@ -284,7 +315,11 @@ def run(args, config: Dict[str, Any]) -> int:
             )
             
             logging.info(f"[编码] {encoder_type.value}/{decode_mode.value}: {os.path.basename(filepath)} -> {cmd_info['name']}")
-            
+
+            # 打印完整的 ffmpeg 命令
+            cmd_str = ' '.join(f'"{arg}"' if ' ' in str(arg) else str(arg) for arg in cmd_info["cmd"])
+            logging.info(f"FFmpeg 命令: {cmd_str}")
+
             # 执行编码
             success, error = execute_ffmpeg(cmd_info["cmd"])
             
