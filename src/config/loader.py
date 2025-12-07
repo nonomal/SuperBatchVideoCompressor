@@ -167,4 +167,21 @@ def apply_cli_overrides(config: Dict[str, Any], args) -> Dict[str, Any]:
     else:
         config["dry_run"] = False
 
+    # 日志/控制台输出
+    config.setdefault("logging", {})
+    log_cfg = config["logging"]
+
+    if hasattr(args, "verbose") and args.verbose:
+        log_cfg["level"] = "DEBUG"
+    if hasattr(args, "quiet") and args.quiet:
+        log_cfg["level"] = "WARNING" if args.quiet == 1 else "ERROR"
+    if hasattr(args, "plain") and args.plain:
+        log_cfg["plain"] = True
+    if hasattr(args, "json_logs") and args.json_logs:
+        log_cfg["json_console"] = True
+    if hasattr(args, "no_progress") and args.no_progress:
+        log_cfg["show_progress"] = False
+    if hasattr(args, "print_cmd") and args.print_cmd:
+        log_cfg["print_cmd"] = True
+
     return config

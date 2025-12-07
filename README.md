@@ -14,6 +14,7 @@ SBVC 是一个基于 FFmpeg 的批量视频压缩命令行工具，支持 NVENC 
 - **进程管理**：Ctrl+C 自动终止所有 FFmpeg 进程，启动时清理临时文件
 - 自动按分辨率计算目标码率
 - 可保持输入目录结构输出
+- 日志/控制台可配置：支持彩色或纯文本、JSON 行输出、静默/进度开关、打印完整 FFmpeg 命令
 
 ## 硬件编码器
 
@@ -58,6 +59,14 @@ encoders:
 
 scheduler:
   max_total_concurrent: 5  # 总并发 = 3 + 2
+
+# 日志/控制台（可选）
+logging:
+  level: INFO            # DEBUG/INFO/WARNING/ERROR
+  plain: false           # 无色输出
+  json_console: false    # 控制台输出 JSON 行
+  show_progress: true    # 显示进度行
+  print_cmd: false       # 总是打印完整 FFmpeg 命令
 ```
 
 启动时日志示例：
@@ -145,13 +154,28 @@ python main.py [选项]
   --max-concurrent N        总并发数
   --no-keep-structure       不保持原始目录结构（扁平化输出）
   --dry-run                 预览模式，不实际执行
+  -v, --verbose             增加日志详细度（可重复）
+  -q, --quiet               减少控制台输出（可重复）
+  --plain                   禁用彩色输出/装饰
+  --no-progress             关闭进度输出（仍保留摘要）
+  --json-logs               控制台输出 JSON 行，便于采集/CI
+  --print-cmd               总是输出完整 FFmpeg 命令
 ```
+
+## 日志与控制台输出
+
+- 默认：彩色控制台 + 详细文件日志（`logs/transcoding_*.log`），INFO 级别。
+- `--plain`：强制无色，适合重定向或不支持 ANSI 的终端（Windows 在未安装 colorama 时自动降级）。
+- `--json-logs`：控制台输出 JSON 行，便于 CI/采集；文件日志保持文本格式。
+- `--no-progress`：关闭进度行，仅输出关键事件和最终统计。
+- `--print-cmd` 或 `--verbose`：打印完整 FFmpeg 命令；否则仅 DEBUG 级别写入。
 
 ## 环境要求
 
 - Python 3.8+
 - FFmpeg（需在 PATH 中）
 - pyyaml（`pip install pyyaml`）
+- （可选）colorama，用于在 Windows 控制台启用 ANSI 彩色输出
 - 硬件驱动：NVIDIA / Intel
 
 ## 测试

@@ -113,6 +113,32 @@ def parse_arguments():
         "--dry-run", action="store_true", help="仅显示任务计划，不实际执行"
     )
 
+    # 日志/输出选项
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="增加日志详细度（可重复）",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="count",
+        default=0,
+        help="减少控制台输出（可重复）",
+    )
+    parser.add_argument("--plain", action="store_true", help="禁用彩色输出/装饰")
+    parser.add_argument(
+        "--no-progress", action="store_true", help="关闭进度输出（仍保留摘要）"
+    )
+    parser.add_argument(
+        "--json-logs", action="store_true", help="控制台输出 JSON 行，便于采集/CI"
+    )
+    parser.add_argument(
+        "--print-cmd", action="store_true", help="总是输出完整 FFmpeg 命令"
+    )
+
     return parser.parse_args()
 
 

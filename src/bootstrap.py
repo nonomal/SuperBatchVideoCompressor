@@ -52,7 +52,14 @@ def prepare_environment(config: Dict[str, Any]) -> Dict[str, Any]:
 
     # 日志初始化
     log_folder = config["paths"]["log"]
-    setup_logging(log_folder)
+    log_cfg = config.get("logging", {})
+    log_file = setup_logging(
+        log_folder,
+        level=log_cfg.get("level", "INFO"),
+        plain=log_cfg.get("plain", False),
+        json_console=log_cfg.get("json_console", False),
+    )
+    config.setdefault("logging", {})["log_file"] = log_file
 
     # 启动时清理输出目录中的临时文件
     output_folder = config["paths"]["output"]

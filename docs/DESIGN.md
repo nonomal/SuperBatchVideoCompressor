@@ -163,6 +163,19 @@ scheduler:
   max_total_concurrent: 5  # 总并发 = 3 + 2
 ```
 
+### 日志/控制台配置
+
+```yaml
+logging:
+  level: INFO          # DEBUG/INFO/WARNING/ERROR
+  plain: false         # 控制台禁用彩色/装饰
+  json_console: false  # 控制台输出 JSON 行，便于采集/CI
+  show_progress: true  # 是否显示进度行
+  print_cmd: false     # 总是打印完整 FFmpeg 命令
+```
+
+命令行对应开关：`-v/--verbose`、`-q/--quiet`、`--plain`、`--json-logs`、`--no-progress`、`--print-cmd`。
+
 ### 配置加载优先级
 1. 命令行参数
 2. 配置文件 (config.yaml)

@@ -34,6 +34,8 @@ from src.scheduler.advanced import (
     TaskResult,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def run_batch(config: Dict[str, Any]) -> int:
     """
@@ -61,34 +63,43 @@ def run_batch(config: Dict[str, Any]) -> int:
     max_bitrate_by_resolution = config["encoding"]["bitrate"].get("max_by_resolution")
     cpu_preset = config.get("encoders", {}).get("cpu", {}).get("preset", "medium")
     dry_run = config.get("dry_run", False)
+    logging_cfg = config.get("logging", {})
+    show_progress = logging_cfg.get("show_progress", True)
+    print_cmd = logging_cfg.get("print_cmd", False)
+    log_file_path = logging_cfg.get("log_file")
+    level_value = logging_cfg.get("level", "INFO")
+    if isinstance(level_value, int):
+        verbose_logging = level_value <= logging.DEBUG
+    else:
+        verbose_logging = str(level_value).upper() == "DEBUG"
 
     # 创建高级调度器
     scheduler = create_advanced_scheduler(config)
 
-    logging.info("=" * 60)
-    logging.info("SBVC - 超级批量视频压缩器")
-    logging.info("=" * 60)
+    logger.info("=" * 60)
+    logger.info("SBVC - 超级批量视频压缩器")
+    logger.info("=" * 60)
 
     # 显示路径配置
-    logging.info(f"输入目录: {input_folder}")
-    logging.info(f"输出目录: {output_folder}")
-    logging.info(f"保持目录结构: {'是' if keep_structure else '否'}")
-    logging.info(f"输出编码: {output_codec}")
-    logging.info("-" * 60)
+    logger.info(f"输入目录: {input_folder}")
+    logger.info(f"输出目录: {output_folder}")
+    logger.info(f"保持目录结构: {'是' if keep_structure else '否'}")
+    logger.info(f"输出编码: {output_codec}")
+    logger.info("-" * 60)
 
     stats = scheduler.get_stats()
-    logging.info(f"总并发上限: {stats['max_total_concurrent']}")
+    logger.info(f"总并发上限: {stats['max_total_concurrent']}")
     hw_encoders = stats["enabled_hw_encoders"]
     if hw_encoders:
-        logging.info(f"硬件编码器: {hw_encoders}")
-    logging.info(f"CPU 兜底: {'启用' if stats['cpu_fallback'] else '禁用'}")
+        logger.info(f"硬件编码器: {hw_encoders}")
+    logger.info(f"CPU 兜底: {'启用' if stats['cpu_fallback'] else '禁用'}")
     for enc_name, enc_stats in stats["encoder_slots"].items():
-        logging.info(f"  - {enc_name}: 最大并发 {enc_stats['max']}")
-    logging.info("回退策略: 硬解+硬编 → 软解+硬编 → 其他编码器 → CPU")
-    logging.info("-" * 60)
+        logger.info(f"  - {enc_name}: 最大并发 {enc_stats['max']}")
+    logger.info("回退策略: 硬解+硬编 → 软解+硬编 → 其他编码器 → CPU")
+    logger.info("-" * 60)
 
     if not os.path.exists(input_folder):
-        logging.error(f"输入目录不存在: {input_folder}")
+        logger.error(f"输入目录不存在: {input_folder}")
         return 1
 
     # 预扫描任务列表
@@ -96,47 +107,47 @@ def run_batch(config: Dict[str, Any]) -> int:
     total_files = len(video_files)
 
     if total_files == 0:
-        logging.warning("未发现任何视频文件")
+        logger.warning("未发现任何视频文件")
         return 0
 
-    logging.info(f"发现 {total_files} 个视频文件")
+    logger.info(f"发现 {total_files} 个视频文件")
 
     # 显示路径映射示例（帮助用户确认目录结构）
     if total_files > 0:
         if keep_structure:
-            logging.info("路径映射示例（保持目录结构）:")
+            logger.info("路径映射示例（保持目录结构）:")
             for i, sample_file in enumerate(video_files[:3], 1):
                 sample_output, _ = resolve_output_paths(
                     sample_file, input_folder, output_folder, keep_structure
                 )
                 rel_path = os.path.relpath(sample_file, input_folder)
-                logging.info(
+                logger.info(
                     f"  {i}. {rel_path} → {os.path.relpath(sample_output, output_folder)}"
                 )
             if total_files > 3:
-                logging.info(f"  ... 还有 {total_files - 3} 个文件")
+                logger.info(f"  ... 还有 {total_files - 3} 个文件")
         else:
-            logging.warning("注意：未保持目录结构，所有文件将输出到同一目录")
-            logging.info("路径映射示例（扁平化输出）:")
+            logger.warning("注意：未保持目录结构，所有文件将输出到同一目录")
+            logger.info("路径映射示例（扁平化输出）:")
             for i, sample_file in enumerate(video_files[:3], 1):
                 sample_output, _ = resolve_output_paths(
                     sample_file, input_folder, output_folder, keep_structure
                 )
-                logging.info(
+                logger.info(
                     f"  {i}. {os.path.basename(sample_file)} → {os.path.basename(sample_output)}"
                 )
             if total_files > 3:
-                logging.info(f"  ... 还有 {total_files - 3} 个文件")
-            logging.warning(
+                logger.info(f"  ... 还有 {total_files - 3} 个文件")
+            logger.warning(
                 "如需保持目录结构，请在配置文件中设置 keep_structure: true 或移除 --no-keep-structure 参数"
             )
 
     if dry_run:
-        logging.info("[DRY RUN] 预览模式，不实际执行")
+        logger.info("[DRY RUN] 预览模式，不实际执行")
         for i, f in enumerate(video_files[:10], 1):
-            logging.info(f"  {i}. {os.path.basename(f)}")
+            logger.info(f"  {i}. {os.path.basename(f)}")
         if total_files > 10:
-            logging.info(f"  ... 还有 {total_files - 10} 个文件")
+            logger.info(f"  ... 还有 {total_files - 10} 个文件")
         return 0
 
     os.makedirs(output_folder, exist_ok=True)
@@ -153,7 +164,10 @@ def run_batch(config: Dict[str, Any]) -> int:
             filepath, input_folder, output_folder, keep_structure
         )
         if os.path.exists(output_path):
-            logging.info(f"[跳过] 输出已存在: {os.path.basename(output_path)}")
+            logger.info(
+                f"[SKIP] 输出已存在: {os.path.basename(output_path)}",
+                extra={"file": os.path.basename(filepath)},
+            )
             results.append(
                 (
                     filepath,
@@ -169,9 +183,9 @@ def run_batch(config: Dict[str, Any]) -> int:
         files_to_process.append(filepath)
 
     if skipped_count > 0:
-        logging.info(f"预检查: {skipped_count} 个文件已存在，跳过")
+        logger.info(f"预检查: {skipped_count} 个文件已存在，跳过")
 
-    logging.info(f"待处理: {len(files_to_process)} 个文件")
+    logger.info(f"待处理: {len(files_to_process)} 个文件")
 
     def build_encode_command(
         filepath: str,
@@ -242,6 +256,11 @@ def run_batch(config: Dict[str, Any]) -> int:
         filepath: str, encoder_type: EncoderType, decode_mode: DecodeMode
     ) -> TaskResult:
         """编码单个文件"""
+        extra_ctx = {
+            "file": os.path.basename(filepath),
+            "enc": encoder_type.value,
+            "decode": decode_mode.value,
+        }
         stats = {
             "original_size": 0,
             "new_size": 0,
@@ -254,7 +273,9 @@ def run_batch(config: Dict[str, Any]) -> int:
             stats["original_size"] = file_size
 
             if file_size < min_file_size * 1024 * 1024:
-                logging.info(f"[跳过] 文件小于 {min_file_size}MB: {filepath}")
+                logger.info(
+                    f"[SKIP] 文件小于 {min_file_size}MB: {filepath}", extra=extra_ctx
+                )
                 stats["status"] = RESULT_SKIP_SIZE
                 return TaskResult(success=True, filepath=filepath, stats=stats)
 
@@ -279,7 +300,9 @@ def run_batch(config: Dict[str, Any]) -> int:
             os.makedirs(os.path.dirname(new_filename), exist_ok=True)
 
             if os.path.exists(new_filename):
-                logging.info(f"[跳过] 输出文件已存在: {new_filename}")
+                logger.info(
+                    f"[SKIP] 输出文件已存在: {new_filename}", extra=extra_ctx
+                )
                 stats["status"] = RESULT_SKIP_EXISTS
                 return TaskResult(success=True, filepath=filepath, stats=stats)
 
@@ -293,25 +316,34 @@ def run_batch(config: Dict[str, Any]) -> int:
                 decode_mode,
             )
 
-            logging.info(
-                f"[编码] {encoder_type.value}/{decode_mode.value}: {os.path.basename(filepath)} -> {cmd_info['name']}"
+            logger.info(
+                f"[ENC] {encoder_type.value}/{decode_mode.value}: {os.path.basename(filepath)} -> {cmd_info['name']}",
+                extra=extra_ctx,
             )
 
             # 打印完整的 ffmpeg 命令
             cmd_str = " ".join(
                 f'"{arg}"' if " " in str(arg) else str(arg) for arg in cmd_info["cmd"]
             )
-            logging.info(f"FFmpeg 命令: {cmd_str}")
+            if print_cmd or verbose_logging:
+                logger.info(f"[CMD] FFmpeg 命令: {cmd_str}", extra=extra_ctx)
+            else:
+                logger.debug(f"[CMD] FFmpeg 命令: {cmd_str}", extra=extra_ctx)
 
             # 执行编码
             success, error = execute_ffmpeg(cmd_info["cmd"])
 
             if not success:
+                if error:
+                    logger.error(f"[FAIL] FFmpeg 失败: {error}", extra=extra_ctx)
                 if os.path.exists(temp_filename):
                     try:
                         os.remove(temp_filename)
                     except Exception as e:
-                        logging.warning(f"临时文件删除失败: {temp_filename}, 错误: {e}")
+                        logger.warning(
+                            f"临时文件删除失败: {temp_filename}, 错误: {e}",
+                            extra=extra_ctx,
+                        )
                 return TaskResult(
                     success=False, filepath=filepath, error=error, stats=stats
                 )
@@ -330,15 +362,18 @@ def run_batch(config: Dict[str, Any]) -> int:
             stats["method"] = cmd_info["name"]
 
             compression_ratio = (1 - new_size / file_size) * 100 if file_size > 0 else 0
-            logging.info(
-                f"[完成] {encoder_type.value}: {os.path.basename(filepath)} | "
-                f"{cmd_info['name']} | 压缩率: {compression_ratio:.1f}%"
+            logger.info(
+                f"[DONE] {encoder_type.value}: {os.path.basename(filepath)} | "
+                f"{cmd_info['name']} | 压缩率: {compression_ratio:.1f}%",
+                extra=extra_ctx,
             )
 
             return TaskResult(success=True, filepath=filepath, stats=stats)
 
         except Exception as e:
-            logging.error(f"[异常] 处理 {filepath} 时发生错误: {e}")
+            logger.error(
+                f"[FAIL] 处理 {filepath} 时发生错误: {e}", extra=extra_ctx
+            )
             return TaskResult(
                 success=False, filepath=filepath, error=str(e), stats=stats
             )
@@ -353,9 +388,11 @@ def run_batch(config: Dict[str, Any]) -> int:
             retry_info = ""
             if result.retry_history:
                 retry_info = f" [尝试: {' → '.join(result.retry_history)}]"
-            logging.info(
-                f"[进度] {completed}/{total_files} ({completed/total_files*100:.1f}%){retry_info}"
-            )
+            if show_progress:
+                logger.info(
+                    f"[PROGRESS] {completed}/{total_files} ({completed/total_files*100:.1f}%){retry_info}",
+                    extra={"file": os.path.basename(filepath)},
+                )
 
         return (filepath, result)
 
@@ -368,7 +405,7 @@ def run_batch(config: Dict[str, Any]) -> int:
                 try:
                     results.append(future.result())
                 except Exception as e:
-                    logging.error(f"任务异常: {e}")
+                    logger.error(f"任务异常: {e}")
     finally:
         scheduler.shutdown()
 
@@ -394,23 +431,25 @@ def run_batch(config: Dict[str, Any]) -> int:
             enc = r.encoder_used.value
             encoder_usage[enc] = encoder_usage.get(enc, 0) + 1
 
-    logging.info("=" * 60)
-    logging.info("任务完成统计")
-    logging.info("-" * 60)
-    logging.info(
+    logger.info("=" * 60)
+    logger.info("任务完成统计")
+    logger.info("-" * 60)
+    logger.info(
         f"总文件数: {total_files}, 成功: {success_count}, 跳过(文件过小): {skip_size_count}, "
         f"跳过(已存在): {skip_exists_count}, 失败: {fail_count}"
     )
     if encoder_usage:
-        logging.info(f"编码器使用统计: {encoder_usage}")
+        logger.info(f"编码器使用统计: {encoder_usage}")
 
     # 显示调度器最终统计
     final_stats = scheduler.get_stats()
-    logging.info("编码器详细统计:")
+    logger.info("编码器详细统计:")
     for enc_name, enc_stats in final_stats["encoder_slots"].items():
-        logging.info(
+        logger.info(
             f"  - {enc_name}: 完成 {enc_stats['completed']}, 失败 {enc_stats['failed']}"
         )
-    logging.info("=" * 60)
+    if log_file_path:
+        logger.info(f"日志文件: {log_file_path}")
+    logger.info("=" * 60)
 
     return 0 if fail_count == 0 else 1

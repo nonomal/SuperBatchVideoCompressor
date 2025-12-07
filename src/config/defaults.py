@@ -137,6 +137,13 @@ DEFAULT_CONFIG = {
         "output": DEFAULT_OUTPUT_FOLDER,
         "log": DEFAULT_LOG_FOLDER,
     },
+    "logging": {
+        "level": "INFO",
+        "plain": False,
+        "json_console": False,
+        "show_progress": True,
+        "print_cmd": False,
+    },
     "encoding": {
         "codec": DEFAULT_OUTPUT_CODEC,
         "audio_bitrate": AUDIO_BITRATE,
