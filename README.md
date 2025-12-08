@@ -44,42 +44,33 @@ python main.py --dry-run
 
 ## 配置文件
 
-编码器 `enabled: true` 表示"想用"，启动时自动检测是否真正可用：
+复制 `config-example.yaml` 为 `config.yaml` 并根据需要修改。
 
-```yaml
-encoders:
-  nvenc:
-    enabled: true          # 想用 NVENC，启动时自动检测
-    max_concurrent: 3      # 并发数
-  qsv:
-    enabled: true          # 想用 QSV，启动时自动检测
-    max_concurrent: 2
-  cpu:
-    enabled: true          # CPU 兜底
+### 主要配置项
 
-scheduler:
-  max_total_concurrent: 5  # 总并发 = 3 + 2
+- **编码器配置**：`encoders` - 设置各编码器的启用状态和并发数
+  - `enabled: true` 表示"想用"，启动时自动检测是否真正可用
+  - NVENC / QSV / VideoToolbox / CPU 可选
 
-# 日志/控制台（可选）
-logging:
-  level: INFO            # DEBUG/INFO/WARNING/ERROR
-  plain: false           # 无色输出
-  json_console: false    # 控制台输出 JSON 行
-  show_progress: true    # 显示进度行
-  print_cmd: false       # 总是打印完整 FFmpeg 命令
-```
+- **编码参数**：`encoding` - 输出编码、码率、音频设置
+  - `codec`: hevc/avc/av1
+  - `bitrate`: 支持强制码率、压缩比例、分辨率自适应封顶
 
-启动时日志示例：
-```
-检测编码器可用性...
-✓ NVENC 可用
-✓ QSV 可用
-✓ CPU 可用
-```
+- **帧率限制**：`fps` - 最大帧率、软解/软编时是否限帧
+
+- **文件处理**：`files` - 最小文件大小、目录结构保持、跳过已存在文件
+
+- **日志配置**：`logging` - 日志级别、输出格式、进度显示
+
+### 配置优先级
+
+命令行参数 > 配置文件 > 程序默认值
+
+详细配置说明请查看 [config-example.yaml](config-example.yaml)
 
 ## 调度策略
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                        任务入口                              │
 └─────────────────────────────────────────────────────────────┘
@@ -112,7 +103,7 @@ logging:
 
 默认情况下，程序会保持输入目录的结构：
 
-```
+```text
 输入目录:                  输出目录:
 L:/input/                 J:/Output3/
 ├── video1.mkv           ├── video1.mp4
@@ -127,6 +118,7 @@ L:/input/                 J:/Output3/
 **配置方式：**
 
 1. **配置文件**（推荐）：
+
    ```yaml
    files:
      keep_structure: true   # 保持目录结构
@@ -134,6 +126,7 @@ L:/input/                 J:/Output3/
    ```
 
 2. **命令行参数**：
+
    ```bash
    # 不保持目录结构（所有文件输出到同一目录）
    python main.py --no-keep-structure
@@ -143,17 +136,28 @@ L:/input/                 J:/Output3/
 
 ## 命令行参数
 
-```
+```text
 python main.py [选项]
 
-选项:
+基本选项:
   -i, --input PATH          输入文件夹路径
   -o, --output PATH         输出文件夹路径
+  -l, --log PATH            日志文件夹路径
   -c, --codec CODEC         输出编码 (hevc/avc/av1)
   --config PATH             配置文件路径
+
+编码选项:
   --max-concurrent N        总并发数
+  --force-bitrate BPS       强制使用指定码率（单位：bps），0表示自动计算
+  --max-fps N               最大帧率限制（默认30）
+  --no-fps-limit            禁用所有帧率限制
+
+文件处理:
+  --min-size MB             最小文件大小阈值（MB），默认100
   --no-keep-structure       不保持原始目录结构（扁平化输出）
   --dry-run                 预览模式，不实际执行
+
+日志和输出:
   -v, --verbose             增加日志详细度（可重复）
   -q, --quiet               减少控制台输出（可重复）
   --plain                   禁用彩色输出/装饰
@@ -164,11 +168,18 @@ python main.py [选项]
 
 ## 日志与控制台输出
 
-- 默认：彩色控制台 + 详细文件日志（`logs/transcoding_*.log`），INFO 级别。
-- `--plain`：强制无色，适合重定向或不支持 ANSI 的终端（Windows 在未安装 colorama 时自动降级）。
-- `--json-logs`：控制台输出 JSON 行，便于 CI/采集；文件日志保持文本格式。
-- `--no-progress`：关闭进度行，仅输出关键事件和最终统计。
-- `--print-cmd` 或 `--verbose`：打印完整 FFmpeg 命令；否则仅 DEBUG 级别写入。
+- **默认**：彩色控制台 + 详细文件日志（`logs/transcoding_*.log`），INFO 级别
+- **`--plain`**：强制无色，适合重定向或不支持 ANSI 的终端（Windows 在未安装 colorama 时自动降级）
+- **`--json-logs`**：控制台输出 JSON 行，便于 CI/采集；文件日志保持文本格式
+- **`--no-progress`**：关闭进度行，仅输出关键事件和最终统计
+- **`--print-cmd` 或 `--verbose`**：打印完整 FFmpeg 命令；否则仅 DEBUG 级别写入
+
+### 日志级别
+
+- **DEBUG**：硬解决策、完整 FFmpeg 命令、详细执行过程
+- **INFO**：任务开始/完成、编码器检测、统计信息（默认）
+- **WARNING**：编码器不可用、任务跳过
+- **ERROR**：FFmpeg 执行失败、严重错误
 
 ## 环境要求
 
@@ -210,3 +221,130 @@ pytest --cov=src --cov-report=html
 - ✅ CLI 功能测试
 
 每次提交都会自动运行所有测试，确保功能稳定可靠。
+
+## 调试指南
+
+### 启用详细日志
+
+#### 方法1：配置文件
+
+```yaml
+logging:
+  level: DEBUG           # 启用详细日志
+  print_cmd: true        # 打印完整 FFmpeg 命令
+```
+
+#### 方法2：命令行
+
+```bash
+python main.py --verbose --print-cmd
+```
+
+### 验证硬件加速是否生效
+
+#### 1. 查看编码器检测日志
+
+```text
+检测编码器可用性...
+✓ NVENC 可用
+✓ QSV 可用
+✓ CPU 可用
+```
+
+#### 2. 查看 FFmpeg 命令（启用 `--print-cmd`）
+
+**硬解命令**（包含 `-hwaccel`）：
+
+```bash
+ffmpeg -y -hide_banner -hwaccel qsv -hwaccel_output_format qsv -i input.mkv -c:v hevc_qsv ...
+```
+
+**软解命令**（不包含 `-hwaccel`）：
+
+```bash
+ffmpeg -y -hide_banner -i input.mkv -c:v hevc_qsv ...
+```
+
+#### 3. 手动测试硬件支持
+
+```bash
+# 查看 QSV 支持的解码器
+ffmpeg -decoders | grep qsv
+
+# 查看 NVENC 支持的编码器
+ffmpeg -encoders | grep nvenc
+
+# 测试 NVENC 初始化
+ffmpeg -f lavfi -i testsrc=duration=1:size=1280x720:rate=1 -c:v h264_nvenc -f null -
+```
+
+## 故障排除
+
+### 问题1：编码器检测失败
+
+**症状**：
+
+```text
+✗ NVENC 不可用: 未找到 NVIDIA GPU
+```
+
+**解决方案**：
+
+- 检查硬件驱动是否安装（NVIDIA 驱动、Intel 显卡驱动）
+- 确认 FFmpeg 编译时包含对应编码器支持：`ffmpeg -encoders | grep nvenc`
+- Windows: 确保最新版本的 NVIDIA 驱动
+
+### 问题2：所有任务都失败
+
+**可能原因**：
+
+1. FFmpeg 不在 PATH 中
+2. 输入文件损坏或格式不支持
+3. 输出目录权限不足
+
+**诊断步骤**：
+
+```bash
+# 检查 FFmpeg 是否可用
+ffmpeg -version
+
+# 启用详细日志
+python main.py --verbose --print-cmd
+
+# 尝试单个文件
+ffmpeg -i input.mkv -c:v hevc output.mp4
+```
+
+### 问题3：WMV 文件处理很慢
+
+**原因**：NVENC 不支持 WMV 硬解，需要使用 QSV
+
+**解决方案**：
+
+1. 确保 QSV 已启用并检测成功
+2. 查看日志确认使用了正确的编码器：
+
+```text
+[INFO] [ENC] qsv/hw_decode: file.wmv -> Intel QSV (HEVC, 硬解+硬编)
+```
+
+### 问题4：码率没有按预期设置
+
+**检查清单**：
+
+1. 确认修改的是 `config.yaml` 而不是 `config-example.yaml`
+2. 检查是否使用了 `--force-bitrate` 命令行参数（会覆盖配置）
+3. 检查配置文件的 `bitrate.forced` 是否为 0
+4. 启用 DEBUG 日志查看码率计算过程
+
+## 详细文档
+
+更多技术细节请参考：
+
+- **[架构设计](docs/DESIGN.md)** - 完整的架构设计、目录结构、调度流程
+- **[码率配置](docs/BITRATE_CONFIG.md)** - 码率计算详解、配置示例、故障排除
+- **[硬解白名单](docs/HARDWARE_DECODE_WHITELIST.md)** - 硬件解码机制、编码器对比、性能影响
+
+## 许可证
+
+MIT License - 详见 [LICENSE](LICENSE) 文件。

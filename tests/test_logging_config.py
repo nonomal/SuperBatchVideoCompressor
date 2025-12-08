@@ -13,6 +13,16 @@ from src.utils.logging import setup_logging
 def test_apply_cli_overrides_logging_flags(tmp_path):
     base_config = {
         "paths": {"input": "in", "output": "out", "log": str(tmp_path)},
+        "encoding": {
+            "codec": "hevc",
+            "bitrate": {"forced": 0, "ratio": 0.5, "min": 500000},
+        },
+        "fps": {
+            "max": 30,
+            "limit_on_software_decode": True,
+            "limit_on_software_encode": True,
+        },
+        "files": {"min_size_mb": 100, "keep_structure": True},
         "logging": {
             "level": "INFO",
             "plain": False,
@@ -56,6 +66,16 @@ def test_apply_cli_overrides_logging_flags(tmp_path):
 def test_apply_cli_overrides_quiet_levels(tmp_path):
     base_config = {
         "paths": {"input": "in", "output": "out", "log": str(tmp_path)},
+        "encoding": {
+            "codec": "hevc",
+            "bitrate": {"forced": 0, "ratio": 0.5, "min": 500000},
+        },
+        "fps": {
+            "max": 30,
+            "limit_on_software_decode": True,
+            "limit_on_software_encode": True,
+        },
+        "files": {"min_size_mb": 100, "keep_structure": True},
         "logging": {},
     }
     # quiet=1 -> WARNING, quiet=2 -> ERROR
@@ -100,7 +120,10 @@ def test_setup_logging_plain_and_json(tmp_path, capsys):
     logger.info("hello", extra={"file": "demo.mp4", "enc": "nvenc"})
 
     captured = capsys.readouterr().out.strip()
-    data = json.loads(captured)
+    # JSON 输出可能有多行，取最后一行
+    lines = captured.split("\n")
+    last_line = lines[-1] if lines else captured
+    data = json.loads(last_line)
     assert data["msg"] == "hello"
     assert data["file"] == "demo.mp4"
     assert data["enc"] == "nvenc"

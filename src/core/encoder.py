@@ -143,44 +143,40 @@ def calculate_target_bitrate(
 SUPPORTED_HW_DECODE_CODECS = {
     # NVIDIA NVENC 支持的硬件解码格式
     "nvenc": [
-        "h264",         # H.264/AVC - 完全支持
-        "hevc",         # HEVC/H.265 - 完全支持
-        "av1",          # AV1 - RTX 30 系及以上支持
-        "vp9",          # VP9 - 部分支持
-        "vp8",          # VP8 - 部分支持
-        "mpeg2video",   # MPEG-2 - 支持
-        "mpeg4",        # MPEG-4 Part 2 - 尝试（可能失败）
+        "h264",  # H.264/AVC - 完全支持
+        "hevc",  # HEVC/H.265 - 完全支持
+        "av1",  # AV1 - RTX 30 系及以上支持
+        "vp9",  # VP9 - 部分支持
+        "vp8",  # VP8 - 部分支持
+        "mpeg2video",  # MPEG-2 - 支持
+        "mpeg4",  # MPEG-4 Part 2 - 尝试（可能失败）
     ],
     # Intel QSV 支持的硬件解码格式
     "qsv": [
-        "h264",         # H.264/AVC - 完全支持
-        "hevc",         # HEVC/H.265 - 完全支持
-        "av1",          # AV1 - 11代酷睿及以上支持
-        "vp9",          # VP9 - 支持
-        "vp8",          # VP8 - 支持
-        "mpeg2video",   # MPEG-2 - 完全支持
-        "vc1",          # VC-1 - 完全支持（WMV高级档次）
-        "wmv3",         # WMV9/VC-1简单/主档次 - 完全支持
-        "mjpeg",        # Motion JPEG - 支持
+        "h264",  # H.264/AVC - 完全支持
+        "hevc",  # HEVC/H.265 - 完全支持
+        "av1",  # AV1 - 11代酷睿及以上支持
+        "vp9",  # VP9 - 支持
+        "vp8",  # VP8 - 支持
+        "mpeg2video",  # MPEG-2 - 完全支持
+        "vc1",  # VC-1 - 完全支持（WMV高级档次）
+        "wmv3",  # WMV9/VC-1简单/主档次 - 完全支持
+        "mjpeg",  # Motion JPEG - 支持
     ],
     # Apple VideoToolbox 支持的硬件解码格式
     "videotoolbox": [
-        "h264",         # H.264/AVC - 完全支持
-        "hevc",         # HEVC/H.265 - 完全支持
-        "mpeg2video",   # MPEG-2 - 支持
-        "mpeg4",        # MPEG-4 - 部分支持
-        "mjpeg",        # Motion JPEG - 支持
-        "prores",       # ProRes - 完全支持
+        "h264",  # H.264/AVC - 完全支持
+        "hevc",  # HEVC/H.265 - 完全支持
+        "mpeg2video",  # MPEG-2 - 支持
+        "mpeg4",  # MPEG-4 - 部分支持
+        "mjpeg",  # Motion JPEG - 支持
+        "prores",  # ProRes - 完全支持
     ],
 }
 
 # 向后兼容：保留旧的列表变量（取所有编码器支持格式的并集）
 SUPPORTED_HW_DECODE_CODECS_LEGACY = list(
-    set(
-        codec
-        for codecs in SUPPORTED_HW_DECODE_CODECS.values()
-        for codec in codecs
-    )
+    set(codec for codecs in SUPPORTED_HW_DECODE_CODECS.values() for codec in codecs)
 )
 
 # 编码器友好名称

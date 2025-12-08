@@ -318,9 +318,7 @@ def run_batch(config: Dict[str, Any]) -> int:
             os.makedirs(os.path.dirname(new_filename), exist_ok=True)
 
             if os.path.exists(new_filename):
-                logger.info(
-                    f"[跳过] 输出文件已存在: {new_filename}", extra=extra_ctx
-                )
+                logger.info(f"[跳过] 输出文件已存在: {new_filename}", extra=extra_ctx)
                 stats["status"] = RESULT_SKIP_EXISTS
                 return TaskResult(success=True, filepath=filepath, stats=stats)
 
@@ -402,12 +400,12 @@ def run_batch(config: Dict[str, Any]) -> int:
             stats["method"] = cmd_info["name"]
 
             # 计算各种统计数据
-            compression_ratio = (
-                (1 - new_size / file_size) * 100 if file_size > 0 else 0
-            )
+            compression_ratio = (1 - new_size / file_size) * 100 if file_size > 0 else 0
             speed_ratio = duration / encode_time if encode_time > 0 else 0
             avg_fps = (
-                (fps * duration) / encode_time if encode_time > 0 and duration > 0 else 0
+                (fps * duration) / encode_time
+                if encode_time > 0 and duration > 0
+                else 0
             )
 
             # 格式化文件大小
@@ -433,7 +431,8 @@ def run_batch(config: Dict[str, Any]) -> int:
 
         except Exception as e:
             logger.error(
-                f"[任务 {task_id}] [异常] 处理 {filepath} 时发生错误: {e}", extra=extra_ctx
+                f"[任务 {task_id}] [异常] 处理 {filepath} 时发生错误: {e}",
+                extra=extra_ctx,
             )
             return TaskResult(
                 success=False, filepath=filepath, error=str(e), stats=stats

@@ -20,35 +20,43 @@ paths:
 # ============================================================
 encoding:
   codec: hevc              # 输出编码: hevc, avc, av1
-  audio_bitrate: "128k"
-  
+  audio_bitrate: "128k"    # 音频码率
+
+  # 码率计算规则（优先级从高到低）：
+  # 1. forced > 0: 强制使用指定码率，忽略其他规则
+  # 2. ratio: 目标码率 = 原始码率 × ratio
+  # 3. max_by_resolution: 根据分辨率限制最大码率
+  # 4. min: 最小码率保护，防止过度压缩
   bitrate:
-    forced: 0              # 强制码率(bps)，0=自动计算
-    ratio: 0.5             # 压缩比例
-    min: 500000            # 最小码率(bps)
-    max_by_resolution:     # 分辨率码率上限
-      720: 1500000
-      1080: 3000000
-      1440: 5000000
-      2160: 9000000
+    forced: 0              # 强制码率(bps)，0=自动计算；>0 时直接使用此值
+    ratio: 0.5             # 压缩比例（0.3=高压缩，0.5=平衡，0.7=高质量）
+    min: 500000            # 最小码率保护(bps)，建议不低于 500kbps
+    max_by_resolution:     # 分辨率自适应码率封顶（使用视频短边判断）
+      720: 1500000         # 720p: 1.5 Mbps
+      1080: 3000000        # 1080p: 3 Mbps
+      1440: 5000000        # 1440p (2K): 5 Mbps
+      2160: 9000000        # 4K: 9 Mbps
 
 # ============================================================
 # 日志/控制台输出
 # ============================================================
 logging:
-  level: INFO            # DEBUG/INFO/WARNING/ERROR
-  plain: false           # true=禁用彩色/装饰
-  json_console: false    # true=控制台输出 JSON 行，便于采集/CI
-  show_progress: true    # 是否显示进度行
-  print_cmd: false       # 总是打印完整 FFmpeg 命令
+  level: INFO            # 日志级别: DEBUG/INFO/WARNING/ERROR
+                         # DEBUG: 查看硬解决策、完整 FFmpeg 命令
+                         # INFO: 默认级别，显示任务进度和统计
+  plain: false           # true=禁用彩色/装饰（适合不支持 ANSI 的终端）
+  json_console: false    # true=控制台输出 JSON 行（便于日志采集/CI）
+  show_progress: true    # 是否显示进度行（实时显示编码进度）
+  print_cmd: false       # 总是打印完整 FFmpeg 命令（调试时启用）
 
 # ============================================================
 # 帧率限制
 # ============================================================
 fps:
-  max: 30
-  limit_on_software_decode: true   # 软解时限帧
-  limit_on_software_encode: true   # 软编时限帧
+  max: 30                          # 最大帧率限制（超过此值的视频会降帧）
+  limit_on_software_decode: true   # 软解时限帧（减轻 CPU 负担）
+  limit_on_software_encode: true   # 软编时限帧（CPU 编码时启用）
+                                   # 注：硬解+硬编时不限帧，可充分利用硬件性能
 
 # ============================================================
 # 编码器配置
@@ -100,15 +108,16 @@ scheduler:
 # 文件处理
 # ============================================================
 files:
-  min_size_mb: 100         # 小于此大小跳过
-  keep_structure: true     # 保持目录结构
-  skip_existing: true      # 跳过已存在的输出
+  min_size_mb: 100         # 最小文件大小阈值（MB），小于此值的文件会被跳过
+  keep_structure: true     # 保持输入目录结构（false=扁平化输出）
+  skip_existing: true      # 跳过已存在的输出文件（避免重复处理）
 
 # ============================================================
-# 配置示例
+# 常见场景配置示例
 # ============================================================
 #
 # 【Windows: N卡 + Intel集显】(推荐配置)
+# 适用于同时拥有 NVIDIA 显卡和 Intel CPU 的台式机/笔记本
 # encoders:
 #   nvenc: { enabled: true, max_concurrent: 3 }
 #   qsv: { enabled: true, max_concurrent: 2 }
@@ -116,6 +125,7 @@ files:
 # scheduler: { max_total_concurrent: 5 }
 #
 # 【Windows: 仅 N 卡】
+# 适用于仅有 NVIDIA 显卡的系统（AMD CPU 或 Intel 核显不可用）
 # encoders:
 #   nvenc: { enabled: true, max_concurrent: 3 }
 #   qsv: { enabled: false }
@@ -123,6 +133,7 @@ files:
 # scheduler: { max_total_concurrent: 3 }
 #
 # 【macOS: Apple 芯片】
+# 适用于 M1/M2/M3 等 Apple Silicon 芯片的 Mac
 # encoders:
 #   nvenc: { enabled: false }
 #   qsv: { enabled: false }
@@ -131,8 +142,32 @@ files:
 # scheduler: { max_total_concurrent: 3 }
 #
 # 【纯 CPU 模式】(无硬件加速)
+# 适用于没有硬件加速或测试环境
 # encoders:
 #   nvenc: { enabled: false }
 #   qsv: { enabled: false }
+#   videotoolbox: { enabled: false }
 #   cpu: { enabled: true, max_concurrent: 4 }
 # scheduler: { max_total_concurrent: 4 }
+#
+# 【高质量模式】
+# 适用于需要保留更多质量的场景
+# encoding:
+#   bitrate:
+#     ratio: 0.7           # 保留 70% 码率
+#     max_by_resolution:
+#       720: 2000000       # 提高封顶值
+#       1080: 5000000
+#       1440: 8000000
+#       2160: 15000000
+#
+# 【极限压缩模式】
+# 适用于需要节省空间的场景（质量会下降）
+# encoding:
+#   bitrate:
+#     ratio: 0.3           # 只保留 30% 码率
+#     max_by_resolution:
+#       720: 1000000       # 降低封顶值
+#       1080: 2000000
+#       1440: 3500000
+#       2160: 6000000
