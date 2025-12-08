@@ -138,8 +138,50 @@ def calculate_target_bitrate(
 # 编码命令构建 - 统一接口
 # ============================================================
 
-# 支持硬件解码的编解码器
-SUPPORTED_HW_DECODE_CODECS = ["h264", "hevc", "av1", "vp9", "mpeg2video"]
+# 按编码器分类的硬件解码支持列表
+# 策略：列出每个编码器理论上支持的格式，尝试硬解失败时调度器会自动回退到软解
+SUPPORTED_HW_DECODE_CODECS = {
+    # NVIDIA NVENC 支持的硬件解码格式
+    "nvenc": [
+        "h264",         # H.264/AVC - 完全支持
+        "hevc",         # HEVC/H.265 - 完全支持
+        "av1",          # AV1 - RTX 30 系及以上支持
+        "vp9",          # VP9 - 部分支持
+        "vp8",          # VP8 - 部分支持
+        "mpeg2video",   # MPEG-2 - 支持
+        "mpeg4",        # MPEG-4 Part 2 - 尝试（可能失败）
+    ],
+    # Intel QSV 支持的硬件解码格式
+    "qsv": [
+        "h264",         # H.264/AVC - 完全支持
+        "hevc",         # HEVC/H.265 - 完全支持
+        "av1",          # AV1 - 11代酷睿及以上支持
+        "vp9",          # VP9 - 支持
+        "vp8",          # VP8 - 支持
+        "mpeg2video",   # MPEG-2 - 完全支持
+        "vc1",          # VC-1 - 完全支持（WMV高级档次）
+        "wmv3",         # WMV9/VC-1简单/主档次 - 完全支持
+        "mjpeg",        # Motion JPEG - 支持
+    ],
+    # Apple VideoToolbox 支持的硬件解码格式
+    "videotoolbox": [
+        "h264",         # H.264/AVC - 完全支持
+        "hevc",         # HEVC/H.265 - 完全支持
+        "mpeg2video",   # MPEG-2 - 支持
+        "mpeg4",        # MPEG-4 - 部分支持
+        "mjpeg",        # Motion JPEG - 支持
+        "prores",       # ProRes - 完全支持
+    ],
+}
+
+# 向后兼容：保留旧的列表变量（取所有编码器支持格式的并集）
+SUPPORTED_HW_DECODE_CODECS_LEGACY = list(
+    set(
+        codec
+        for codecs in SUPPORTED_HW_DECODE_CODECS.values()
+        for codec in codecs
+    )
+)
 
 # 编码器友好名称
 ENCODER_DISPLAY_NAMES = {
@@ -195,14 +237,20 @@ def build_hw_encode_command(
     hw_display = ENCODER_DISPLAY_NAMES.get(hw_accel, hw_accel)
     codec_display = CODEC_DISPLAY_NAMES.get(output_codec, output_codec.upper())
 
+    # 获取该编码器支持的硬件解码格式列表
+    supported_codecs = SUPPORTED_HW_DECODE_CODECS.get(hw_accel, [])
+
     cmd = ["ffmpeg", "-y", "-hide_banner"]
 
-    # 硬解模式
-    if use_hw_decode and source_codec in SUPPORTED_HW_DECODE_CODECS:
+    # 硬解模式：检查源编码是否在该编码器的支持列表中
+    if use_hw_decode and source_codec in supported_codecs:
         hwaccel = hw_config.get("hwaccel")
         hwaccel_output_format = hw_config.get("hwaccel_output_format")
 
         if hwaccel:
+            logging.debug(
+                f"尝试硬解: {hw_accel} 编码器支持 {source_codec} 格式的硬件解码"
+            )
             cmd.extend(["-hwaccel", hwaccel])
             if hwaccel_output_format:
                 cmd.extend(["-hwaccel_output_format", hwaccel_output_format])
@@ -214,8 +262,13 @@ def build_hw_encode_command(
                 "cmd": cmd,
                 "encoder": hw_accel,
             }
+    elif use_hw_decode:
+        logging.debug(
+            f"跳过硬解: {hw_accel} 编码器不支持 {source_codec} 格式的硬件解码，"
+            f"支持的格式: {', '.join(supported_codecs)}"
+        )
 
-    # 软解模式
+    # 软解模式（硬解不支持或未启用）
     cmd = ["ffmpeg", "-y", "-hide_banner", "-i", filepath]
 
     if limit_fps:

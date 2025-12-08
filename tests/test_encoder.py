@@ -13,6 +13,7 @@ from src.core.encoder import (
     calculate_target_bitrate,
     build_hw_encode_command,
     build_sw_encode_command,
+    SUPPORTED_HW_DECODE_CODECS,
 )
 from src.config.defaults import HW_ENCODERS, SW_ENCODERS
 
@@ -151,3 +152,76 @@ class TestEncoderMappings:
         nvenc = HW_ENCODERS["nvenc"]
         assert nvenc["hevc"] == "hevc_nvenc"
         assert nvenc["avc"] == "h264_nvenc"
+
+
+class TestHardwareDecodeWhitelist:
+    """硬件解码白名单测试"""
+
+    def test_whitelist_structure(self):
+        """测试白名单是字典结构"""
+        assert isinstance(SUPPORTED_HW_DECODE_CODECS, dict)
+        assert "nvenc" in SUPPORTED_HW_DECODE_CODECS
+        assert "qsv" in SUPPORTED_HW_DECODE_CODECS
+        assert "videotoolbox" in SUPPORTED_HW_DECODE_CODECS
+
+    def test_qsv_supports_wmv(self):
+        """测试 QSV 支持 WMV/VC1 硬解"""
+        qsv_codecs = SUPPORTED_HW_DECODE_CODECS["qsv"]
+        assert "vc1" in qsv_codecs
+        assert "wmv3" in qsv_codecs
+
+    def test_nvenc_no_wmv(self):
+        """测试 NVENC 不支持 WMV/VC1 硬解"""
+        nvenc_codecs = SUPPORTED_HW_DECODE_CODECS["nvenc"]
+        assert "vc1" not in nvenc_codecs
+        assert "wmv3" not in nvenc_codecs
+
+    def test_common_codecs_in_all(self):
+        """测试常见编码格式在所有编码器中都支持"""
+        for encoder, codecs in SUPPORTED_HW_DECODE_CODECS.items():
+            assert "h264" in codecs, f"{encoder} 应该支持 h264"
+            assert "hevc" in codecs, f"{encoder} 应该支持 hevc"
+
+    def test_qsv_wmv_hardware_decode(self):
+        """测试 QSV 对 WMV 文件使用硬解"""
+        result = build_hw_encode_command(
+            filepath="/test/input.wmv",
+            temp_filename="/test/output.mp4",
+            bitrate=3000000,
+            source_codec="wmv3",
+            hw_accel="qsv",
+            output_codec="hevc",
+            use_hw_decode=True,
+        )
+
+        assert result is not None
+        assert "硬解+硬编" in result["name"]
+        assert "-hwaccel" in result["cmd"]
+        assert "qsv" in result["cmd"]
+
+    def test_nvenc_wmv_software_decode(self):
+        """测试 NVENC 对 WMV 文件回退到软解"""
+        result = build_hw_encode_command(
+            filepath="/test/input.wmv",
+            temp_filename="/test/output.mp4",
+            bitrate=3000000,
+            source_codec="wmv3",
+            hw_accel="nvenc",
+            output_codec="hevc",
+            use_hw_decode=True,
+        )
+
+        assert result is not None
+        assert "软解+硬编" in result["name"]
+        assert "-hwaccel" not in result["cmd"]
+
+    def test_encoder_specific_codec_support(self):
+        """测试不同编码器对特定编码格式的支持"""
+        # QSV 支持 VC1
+        assert "vc1" in SUPPORTED_HW_DECODE_CODECS["qsv"]
+
+        # VideoToolbox 支持 ProRes
+        assert "prores" in SUPPORTED_HW_DECODE_CODECS["videotoolbox"]
+
+        # NVENC 支持 VP9
+        assert "vp9" in SUPPORTED_HW_DECODE_CODECS["nvenc"]

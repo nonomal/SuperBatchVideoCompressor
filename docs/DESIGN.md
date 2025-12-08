@@ -189,6 +189,35 @@ logging:
 - `build_sw_encode_command()`: 构建软件编码命令
 - `execute_ffmpeg()`: 执行命令并处理错误
 
+#### 硬件解码白名单机制
+`SUPPORTED_HW_DECODE_CODECS` 是一个按编码器分类的字典，定义了每个硬件加速器支持的硬件解码格式：
+
+```python
+SUPPORTED_HW_DECODE_CODECS = {
+    "nvenc": ["h264", "hevc", "av1", "vp9", "vp8", "mpeg2video", "mpeg4"],
+    "qsv": ["h264", "hevc", "av1", "vp9", "vp8", "mpeg2video", "vc1", "wmv3", "mjpeg"],
+    "videotoolbox": ["h264", "hevc", "mpeg2video", "mpeg4", "mjpeg", "prores"],
+}
+```
+
+**工作原理**：
+
+1. **动态判断**：根据当前使用的编码器（nvenc/qsv/videotoolbox）查询其支持的硬解格式
+2. **智能尝试**：如果源编码在白名单中，构建硬解命令并尝试执行
+3. **自动回退**：如果硬解失败（FFmpeg 报错），调度器自动切换到软解+硬编模式
+4. **性能优化**：避免对不支持的格式进行无效的硬解尝试
+
+**关键差异**：
+
+- **NVENC**：不支持 VC1/WMV，WMV 文件会直接使用软解
+- **QSV**：支持 VC1/WMV 硬解，WMV 文件可以充分利用硬件加速
+- **VideoToolbox**：支持 ProRes，但不支持 VP9/AV1
+
+**调试方法**：
+
+- 设置 `logging.level: DEBUG` 或 `--verbose` 查看硬解决策日志
+- 使用 `--print-cmd` 查看实际执行的 FFmpeg 命令
+
 ### encoder_check.py
 - `detect_available_encoders()`: 检测所有编码器可用性
 - `check_nvenc_available()`: 检测 NVENC
