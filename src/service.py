@@ -185,7 +185,8 @@ def run_batch(config: Dict[str, Any]) -> int:
     if skipped_count > 0:
         logger.info(f"预检查: {skipped_count} 个文件已存在，跳过")
 
-    logger.info(f"待处理: {len(files_to_process)} 个文件")
+    total_tasks = len(files_to_process)
+    logger.info(f"待处理: {total_tasks} 个文件")
 
     def build_encode_command(
         filepath: str,
@@ -259,8 +260,10 @@ def run_batch(config: Dict[str, Any]) -> int:
         import time
         from src.core.video import get_duration, get_fps
 
-        # 获取任务ID（从调度器传入）
+        # 获取任务ID（从外部传入）
         task_id = getattr(encode_file, "_current_task_id", 0)
+        total_tasks = getattr(encode_file, "_total_tasks", 0)
+        task_label = f"{task_id}/{total_tasks}" if total_tasks > 0 else str(task_id)
 
         extra_ctx = {
             "file": os.path.basename(filepath),
@@ -335,7 +338,7 @@ def run_batch(config: Dict[str, Any]) -> int:
             # 获取文件相对路径
             rel_path = os.path.relpath(filepath, input_folder)
             logger.info(
-                f"[任务 {task_id}] [开始编码] {rel_path}\n"
+                f"[任务 {task_label}] [开始编码] {rel_path}\n"
                 f"    编码器: {cmd_info['name']}\n"
                 f"    源信息: {width}x{height} {source_codec.upper()} "
                 f"{original_bitrate/1000000:.2f}Mbps {fps:.1f}fps {duration/60:.1f}分钟",
@@ -364,7 +367,7 @@ def run_batch(config: Dict[str, Any]) -> int:
             if not success:
                 if error:
                     logger.error(
-                        f"[任务 {task_id}] [失败] FFmpeg 错误: {error}", extra=extra_ctx
+                        f"[任务 {task_label}] [失败] FFmpeg 错误: {error}", extra=extra_ctx
                     )
                 if os.path.exists(temp_filename):
                     try:
@@ -418,7 +421,7 @@ def run_batch(config: Dict[str, Any]) -> int:
 
             # 详细的完成日志
             logger.info(
-                f"[任务 {task_id}] [完成] {rel_path}\n"
+                f"[任务 {task_label}] [完成] {rel_path}\n"
                 f"    编码器: {encoder_type.value.upper()} | 模式: {cmd_info['name']}\n"
                 f"    输入: {format_size(file_size)} {source_codec.upper()} {original_bitrate/1000000:.2f}Mbps\n"
                 f"    输出: {format_size(new_size)} {output_codec.upper()} {output_bitrate/1000000:.2f}Mbps\n"
@@ -431,20 +434,19 @@ def run_batch(config: Dict[str, Any]) -> int:
 
         except Exception as e:
             logger.error(
-                f"[任务 {task_id}] [异常] 处理 {filepath} 时发生错误: {e}",
+                f"[任务 {task_label}] [异常] 处理 {filepath} 时发生错误: {e}",
                 extra=extra_ctx,
             )
             return TaskResult(
                 success=False, filepath=filepath, error=str(e), stats=stats
             )
 
-    def process_file(filepath: str):
+    def process_file(filepath: str, task_id: int):
         nonlocal completed
 
-        # 传递任务ID到编码函数
-        with lock:
-            task_id = completed + 1
-            encode_file._current_task_id = task_id
+        # 传递任务ID和总任务数到编码函数
+        encode_file._current_task_id = task_id
+        encode_file._total_tasks = total_tasks
 
         result = scheduler.schedule_task(filepath, encode_file)
 
@@ -455,17 +457,21 @@ def run_batch(config: Dict[str, Any]) -> int:
                 retry_info = f" [重试路径: {' → '.join(result.retry_history)}]"
             if show_progress:
                 logger.info(
-                    f"[进度] {completed}/{total_files} ({completed/total_files*100:.1f}%){retry_info}",
+                    f"[进度] {completed}/{total_tasks} ({completed/total_tasks*100:.1f}%){retry_info}",
                     extra={"file": os.path.basename(filepath), "task_id": task_id},
                 )
 
         return (filepath, result)
 
     # 使用线程池并发处理
+    # 为每个文件预先分配任务ID（从1开始）
     max_workers = scheduler.max_total_concurrent
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(process_file, f) for f in files_to_process]
+            futures = [
+                executor.submit(process_file, f, idx + 1)
+                for idx, f in enumerate(files_to_process)
+            ]
             for future in concurrent.futures.as_completed(futures):
                 try:
                     results.append(future.result())
@@ -499,8 +505,11 @@ def run_batch(config: Dict[str, Any]) -> int:
     logger.info("=" * 60)
     logger.info("任务完成统计")
     logger.info("-" * 60)
+    logger.info(f"发现文件: {total_files}")
+    if skipped_count > 0:
+        logger.info(f"预检查跳过(已存在): {skipped_count}")
     logger.info(
-        f"总文件数: {total_files}, 成功: {success_count}, 跳过(文件过小): {skip_size_count}, "
+        f"待处理: {total_tasks}, 成功: {success_count}, 跳过(文件过小): {skip_size_count}, "
         f"跳过(已存在): {skip_exists_count}, 失败: {fail_count}"
     )
     if encoder_usage:
