@@ -204,9 +204,7 @@ def build_stream_plan(filepath: str, encoding_cfg: Dict[str, Any]) -> Dict[str, 
         audio_args.extend(["-an"])
     else:
         selected_audio = _select_audio_streams(audio_streams, audio_cfg)
-        logger.debug(
-            f"选中音轨: {[s.index for s in selected_audio]} (keep={tracks_keep})"
-        )
+        logger.debug(f"选中音轨: {[s.index for s in selected_audio]} (keep={tracks_keep})")
 
         target_bitrate_str = audio_cfg.get("target_bitrate")
         if target_bitrate_str is None:
@@ -234,9 +232,7 @@ def build_stream_plan(filepath: str, encoding_cfg: Dict[str, Any]) -> Dict[str, 
                 continue
 
             # transcode
-            logger.debug(
-                f"音轨{out_idx} 转码为 {target_codec}@{target_bitrate_str}"
-            )
+            logger.debug(f"音轨{out_idx} 转码为 {target_codec}@{target_bitrate_str}")
             audio_args.extend([f"-c:a:{out_idx}", target_codec])
             if target_bitrate_str:
                 audio_args.extend([f"-b:a:{out_idx}", str(target_bitrate_str)])
@@ -254,7 +250,8 @@ def build_stream_plan(filepath: str, encoding_cfg: Dict[str, Any]) -> Dict[str, 
     if subtitles_keep != "none":
         selected_subs = _select_subtitle_streams(subtitle_streams, subtitles_cfg)
         logger.debug(
-            f"选中字轨: {[s.index for s in selected_subs]} (keep={subtitles_keep})"
+            f"选中字轨: {[s.index for s in selected_subs]} "
+            f"(keep={subtitles_keep})"
         )
         for out_idx, s in enumerate(selected_subs):
             map_args.extend(["-map", f"0:{s.index}"])

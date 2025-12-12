@@ -159,12 +159,12 @@ DEFAULT_CONFIG = {
             "copy_allow_codecs": ["aac", "mp3"],
             "copy_max_bitrate_ratio": 1.0,
             "aac_adtstoasc": True,
-                "tracks": {
-                    "keep": "first",  # first|all|language_prefer
-                    "prefer_language": ["zho", "chi", "eng"],
-                    "drop_commentary": False,
-                },
+            "tracks": {
+                "keep": "first",  # first|all|language_prefer
+                "prefer_language": ["zho", "chi", "eng"],
+                "drop_commentary": False,
             },
+        },
         # 字幕处理高级配置（可选）
         "subtitles": {
             "keep": "none",  # none|mov_text|copy

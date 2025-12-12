@@ -124,7 +124,8 @@ def run_batch(config: Dict[str, Any]) -> int:
                 )
                 rel_path = os.path.relpath(sample_file, input_folder)
                 logger.info(
-                    f"  {i}. {rel_path} → {os.path.relpath(sample_output, output_folder)}"
+                    f"  {i}. {rel_path} → "
+                    f"{os.path.relpath(sample_output, output_folder)}"
                 )
             if total_files > 3:
                 logger.info(f"  ... 还有 {total_files - 3} 个文件")
@@ -136,7 +137,8 @@ def run_batch(config: Dict[str, Any]) -> int:
                     sample_file, input_folder, output_folder, keep_structure
                 )
                 logger.info(
-                    f"  {i}. {os.path.basename(sample_file)} → {os.path.basename(sample_output)}"
+                    f"  {i}. {os.path.basename(sample_file)} → "
+                    f"{os.path.basename(sample_output)}"
                 )
             if total_files > 3:
                 logger.info(f"  ... 还有 {total_files - 3} 个文件")
@@ -304,7 +306,8 @@ def run_batch(config: Dict[str, Any]) -> int:
 
             if file_size < min_file_size * 1024 * 1024:
                 logger.info(
-                    f"[跳过] 文件小于 {min_file_size}MB: {filepath}", extra=extra_ctx
+                    f"[跳过] 文件小于 {min_file_size}MB: {filepath}",
+                    extra=extra_ctx,
                 )
                 stats["status"] = RESULT_SKIP_SIZE
                 return TaskResult(success=True, filepath=filepath, stats=stats)
@@ -355,7 +358,9 @@ def run_batch(config: Dict[str, Any]) -> int:
                 stream_plan=stream_plan,
             )
             cmd_info["used_audio_copy"] = stream_plan.get("used_audio_copy", False)
-            cmd_info["used_subtitle_copy"] = stream_plan.get("used_subtitle_copy", False)
+            cmd_info["used_subtitle_copy"] = stream_plan.get(
+                "used_subtitle_copy", False
+            )
 
             # 获取文件相对路径
             rel_path = os.path.relpath(filepath, input_folder)
@@ -383,9 +388,9 @@ def run_batch(config: Dict[str, Any]) -> int:
             success, error = execute_ffmpeg(cmd_info["cmd"])
 
             # copy 模式失败时，尝试一次安全回退（禁用 copy/字幕）
-            if (
-                not success
-                and (cmd_info.get("used_audio_copy") or cmd_info.get("used_subtitle_copy"))
+            if not success and (
+                cmd_info.get("used_audio_copy")
+                or cmd_info.get("used_subtitle_copy")
             ):
                 from copy import deepcopy
 
@@ -413,7 +418,8 @@ def run_batch(config: Dict[str, Any]) -> int:
                 success, error = execute_ffmpeg(safe_cmd_info["cmd"])
                 if success:
                     logger.debug(
-                        f"[任务 {task_label}] 安全模式重试成功", extra=extra_ctx
+                        f"[任务 {task_label}] 安全模式重试成功",
+                        extra=extra_ctx,
                     )
                     cmd_info = safe_cmd_info
                 else:
@@ -485,10 +491,13 @@ def run_batch(config: Dict[str, Any]) -> int:
             logger.info(
                 f"[任务 {task_label}] [完成] {rel_path}\n"
                 f"    编码器: {encoder_type.value.upper()} | 模式: {cmd_info['name']}\n"
-                f"    输入: {format_size(file_size)} {source_codec.upper()} {original_bitrate/1000000:.2f}Mbps\n"
-                f"    输出: {format_size(new_size)} {output_codec.upper()} {output_bitrate/1000000:.2f}Mbps\n"
+                f"    输入: {format_size(file_size)} "
+                f"{source_codec.upper()} {original_bitrate/1000000:.2f}Mbps\n"
+                f"    输出: {format_size(new_size)} "
+                f"{output_codec.upper()} {output_bitrate/1000000:.2f}Mbps\n"
                 f"    压缩率: {compression_ratio:.1f}% | 时长: {output_duration/60:.1f}分钟\n"
-                f"    耗时: {encode_time/60:.1f}分钟 | 速度: {speed_ratio:.2f}x | 平均: {avg_fps:.1f}fps",
+                f"    耗时: {encode_time/60:.1f}分钟 | 速度: "
+                f"{speed_ratio:.2f}x | 平均: {avg_fps:.1f}fps",
                 extra=extra_ctx,
             )
 
@@ -519,7 +528,8 @@ def run_batch(config: Dict[str, Any]) -> int:
                 retry_info = f" [重试路径: {' → '.join(result.retry_history)}]"
             if show_progress:
                 logger.info(
-                    f"[进度] {completed}/{total_tasks} ({completed/total_tasks*100:.1f}%){retry_info}",
+                    f"[进度] {completed}/{total_tasks} "
+                    f"({completed/total_tasks*100:.1f}%){retry_info}",
                     extra={"file": os.path.basename(filepath), "task_id": task_id},
                 )
 
